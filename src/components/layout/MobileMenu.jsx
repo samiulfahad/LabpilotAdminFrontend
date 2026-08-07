@@ -1,9 +1,15 @@
 import { useState, useEffect } from "react";
-import { NavLink, Link } from "react-router-dom";
+import { NavLink, Link, useNavigate } from "react-router-dom";
 import { LogOut, Menu, X, ChevronRight, Zap } from "lucide-react";
 import menu from "./menu";
+import { useAuthStore } from "../../store/authStore";
+import Popup from "../popup"; // adjust path to match your project structure
 
 const MobileMenu = () => {
+  const navigate = useNavigate();
+  const logout = useAuthStore((s) => s.logout);
+  const [showLogoutPopup, setShowLogoutPopup] = useState(false);
+
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [lastScroll, setLastScroll] = useState(0);
@@ -40,6 +46,12 @@ const MobileMenu = () => {
   }, [isMenuOpen]);
 
   const hidden = scrollDirection === "down";
+
+  const handleConfirmLogout = async () => {
+    setIsMenuOpen(false);
+    await logout();
+    navigate("/login", { replace: true });
+  };
 
   return (
     <>
@@ -140,12 +152,10 @@ const MobileMenu = () => {
                       className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all
                       ${isActive ? "bg-indigo-50 border-indigo-200" : "border-transparent"}`}
                     >
-                      {/* Active left bar */}
                       {isActive && (
                         <div className="absolute left-0 top-[22%] bottom-[22%] w-[3px] bg-gradient-to-b from-indigo-500 to-indigo-400 rounded-r-full" />
                       )}
 
-                      {/* Icon */}
                       <div
                         className={`w-[34px] h-[34px] rounded-[9px] shrink-0 flex items-center justify-center border
                         ${isActive ? "bg-indigo-100 border-indigo-200" : "bg-slate-50 border-slate-200"}`}
@@ -153,7 +163,6 @@ const MobileMenu = () => {
                         <Icon size={14} className={isActive ? "text-indigo-500" : "text-slate-400"} />
                       </div>
 
-                      {/* Label */}
                       <span
                         className={`flex-1 text-[13.5px] tracking-[-0.2px]
                         ${isActive ? "font-bold text-indigo-900" : "font-medium text-slate-500"}`}
@@ -172,7 +181,10 @@ const MobileMenu = () => {
 
         {/* Sign out */}
         <div className="shrink-0 border-t border-slate-50 px-3 pt-2 pb-3.5">
-          <button className="group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-transparent hover:bg-red-50 hover:border-red-100 transition-all cursor-pointer bg-transparent">
+          <button
+            onClick={() => setShowLogoutPopup(true)}
+            className="group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-transparent hover:bg-red-50 hover:border-red-100 transition-all cursor-pointer bg-transparent"
+          >
             <div className="w-[34px] h-[34px] rounded-[9px] bg-red-50 border border-red-100 flex items-center justify-center shrink-0">
               <LogOut size={13} className="text-red-400" />
             </div>
@@ -182,6 +194,17 @@ const MobileMenu = () => {
           </button>
         </div>
       </div>
+
+      {showLogoutPopup && (
+        <Popup
+          type="logout"
+          message="Are you sure you want to log out?"
+          confirmText="Log Out"
+          cancelText="Cancel"
+          onConfirm={handleConfirmLogout}
+          onClose={() => setShowLogoutPopup(false)}
+        />
+      )}
 
       <style>{`
         @keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }

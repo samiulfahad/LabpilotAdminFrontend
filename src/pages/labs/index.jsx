@@ -1,4 +1,6 @@
+// Labs.jsx
 import { useEffect, useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   Plus,
   Search,
@@ -14,30 +16,47 @@ import {
   Hash,
   Layers,
   RefreshCw,
-  TrendingUp,
   Activity,
   Pencil,
   Users,
   ShieldCheck,
   UserCog,
   Headset,
-  Trash2,
   PowerOff,
-  Power,
-  KeyRound,
-  Eye,
-  EyeOff,
-  Lock,
   Info,
+  Lock,
+  Zap,
 } from "lucide-react";
 
-import Modal from "../../components/modal";
 import Popup from "../../components/popup";
-import labService from "../../api/labService";
+import labService from "../../api/labService"; // lab CRUD + staff (view only)
 import zoneService from "../../api/zoneService";
-import staffService from "../../api/staffService";
 
 const LIMIT = 20;
+
+/* ────────────────────────────────────────────────────────────────────────
+   LEDGER — design tokens
+   ──────────────────────────────────────────────────────────────────────── */
+const INK = "#1C2321";
+const INK_MUTE = "#79746A";
+const PAPER = "#FAF9F5";
+const GROUND = "#F5F4EF";
+const LINE = "#DBD6C9";
+const TEAL = "#0F6E5C";
+const TEAL_DARK = "#0B5747";
+const TEAL_TINT = "#E7F0EC";
+const RUST = "#B3432B";
+const RUST_TINT = "#F7E6E1";
+const AMBER = "#A9762C";
+const AMBER_TINT = "#F3E9D6";
+const VIOLET = "#5B4E8C";
+const VIOLET_TINT = "#EBE8F5";
+
+const dotGround = {
+  backgroundColor: GROUND,
+  backgroundImage: `radial-gradient(${LINE} 1px, transparent 1px)`,
+  backgroundSize: "15px 15px",
+};
 
 const EMPTY_LAB = {
   name: "",
@@ -55,334 +74,706 @@ const EMPTY_LAB = {
     zone: "",
     zoneId: "",
   },
-  billing: { perInvoiceFee: "", monthlyFee: "", commission: "" },
+  billing: { feePerInvoice: "", forceInvoiceFee: false, monthlyFee: "", commission: "" },
 };
-
-const EMPTY_STAFF = {
-  name: "",
-  phone: "",
-  email: "",
-  password: "",
-  role: "staff",
-  isActive: true,
-  permissions: {
-    createInvoice: false,
-    editInvoice: false,
-    deleteInvoice: false,
-    cashmemo: false,
-    uploadReport: false,
-    downloadReport: false,
-  },
-};
-
-/* ─── Shared primitives ──────────────────────────────────── */
-
-const TextInput = ({ label, ...props }) => (
-  <div>
-    {label && (
-      <label className="block text-[10.5px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
-        {label}
-      </label>
-    )}
-    <input
-      className="w-full px-3 py-2.5 text-[13.5px] rounded-xl border border-slate-200 bg-white text-slate-800 placeholder-slate-300 outline-none transition-all focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/10"
-      {...props}
-    />
-  </div>
-);
-
-const PasswordInput = ({ label, ...props }) => {
-  const [show, setShow] = useState(false);
-  return (
-    <div>
-      {label && (
-        <label className="block text-[10.5px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
-          {label}
-        </label>
-      )}
-      <div className="relative">
-        <input
-          type={show ? "text" : "password"}
-          className="w-full px-3 py-2.5 pr-10 text-[13.5px] rounded-xl border border-slate-200 bg-white text-slate-800 placeholder-slate-300 outline-none transition-all focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/10"
-          {...props}
-        />
-        <button
-          type="button"
-          onClick={() => setShow((s) => !s)}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition border-none bg-transparent cursor-pointer"
-        >
-          {show ? <EyeOff size={14} /> : <Eye size={14} />}
-        </button>
-      </div>
-    </div>
-  );
-};
-
-const SelectInput = ({ label, children, ...props }) => (
-  <div>
-    {label && (
-      <label className="block text-[10.5px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
-        {label}
-      </label>
-    )}
-    <select
-      className="w-full px-3 py-2.5 text-[13.5px] rounded-xl border border-slate-200 bg-white text-slate-800 outline-none transition-all focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/10"
-      {...props}
-    >
-      {children}
-    </select>
-  </div>
-);
-
-const SwitchToggle = ({ active, onChange }) => (
-  <button
-    type="button"
-    onClick={() => onChange(!active)}
-    className="flex items-center gap-2 bg-transparent border-none cursor-pointer p-0"
-  >
-    <span
-      className={`relative inline-block w-9 h-5 rounded-full transition-colors duration-200 ${active ? "bg-indigo-500" : "bg-slate-200"}`}
-    >
-      <span
-        className={`absolute top-[3px] w-3.5 h-3.5 rounded-full bg-white shadow-sm transition-all duration-200 ${active ? "left-[19px]" : "left-[3px]"}`}
-      />
-    </span>
-    <span className={`text-xs font-semibold ${active ? "text-indigo-600" : "text-slate-400"}`}>
-      {active ? "Active" : "Inactive"}
-    </span>
-  </button>
-);
-
-const StatusBadge = ({ active }) => (
-  <span
-    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold border select-none ${
-      active ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-400 border-slate-200"
-    }`}
-  >
-    <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-emerald-500" : "bg-slate-300"}`} />
-    {active ? "Active" : "Inactive"}
-  </span>
-);
-
-const PermissionToggle = ({ label, checked, onChange }) => (
-  <label className="flex items-center gap-2.5 cursor-pointer select-none group">
-    <div
-      onClick={() => onChange(!checked)}
-      className={`w-4 h-4 rounded-[5px] border flex items-center justify-center transition-all cursor-pointer shrink-0
-        ${checked ? "bg-indigo-500 border-indigo-500" : "bg-white border-slate-300 group-hover:border-indigo-300"}`}
-    >
-      {checked && (
-        <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
-          <path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      )}
-    </div>
-    <span className="text-[12.5px] text-slate-600 font-medium">{label}</span>
-  </label>
-);
-
-/* ─── Lab Type Badge ─────────────────────────────────────── */
-
-const LAB_TYPE_META = {
-  diagnostic: {
-    label: "Diagnostic",
-    icon: FlaskConical,
-    color: "bg-indigo-50 text-indigo-600 border-indigo-200",
-  },
-  hospital: {
-    label: "Hospital",
-    icon: Building2,
-    color: "bg-rose-50 text-rose-600 border-rose-200",
-  },
-};
-
-const LabTypeBadge = ({ type }) => {
-  if (!type) return null;
-  const meta = LAB_TYPE_META[type];
-  if (!meta) return null;
-  const Icon = meta.icon;
-  return (
-    <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${meta.color}`}
-    >
-      <Icon size={9} />
-      {meta.label}
-    </span>
-  );
-};
-
-/* ─── Lab View Modal ─────────────────────────────────────── */
-
-const LabViewModal = ({ isOpen, onClose, lab }) => {
-  if (!lab) return null;
-
-  const Section = ({ icon: Icon, title, children }) => (
-    <div>
-      <div className="flex items-center gap-2 mb-3">
-        <Icon size={12} className="text-slate-400" />
-        <p className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-widest">{title}</p>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 px-4 py-3.5 rounded-xl border border-slate-100 bg-slate-50">
-        {children}
-      </div>
-    </div>
-  );
-
-  const Field = ({ label, value, full }) =>
-    value ? (
-      <div className={full ? "sm:col-span-2" : ""}>
-        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">{label}</p>
-        <p className="text-[13px] text-slate-700 font-medium">{value}</p>
-      </div>
-    ) : null;
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} size="md">
-      <div className="flex flex-col">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <div className="flex items-center gap-3">
-            <div
-              className={`w-9 h-9 rounded-xl flex items-center justify-center shadow-sm shrink-0 border ${
-                lab.type === "hospital" ? "bg-rose-50 border-rose-200" : "bg-indigo-50 border-indigo-200"
-              }`}
-            >
-              {lab.type === "hospital" ? (
-                <Building2 size={16} className="text-rose-500" />
-              ) : (
-                <FlaskConical size={16} className="text-indigo-500" />
-              )}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-bold text-slate-800 tracking-tight leading-none">{lab.name}</p>
-                <LabTypeBadge type={lab.type} />
-              </div>
-              <div className="flex items-center gap-3 mt-1">
-                <span className="flex items-center gap-1 text-[11px] text-slate-400 font-mono">
-                  <Hash size={9} className="text-slate-300" />
-                  {lab.labKey}
-                </span>
-                <StatusBadge active={lab.isActive} />
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 border border-slate-200 transition"
-          >
-            <X size={14} />
-          </button>
-        </div>
-
-        <div className="flex flex-col gap-4 p-5 overflow-y-auto max-h-[70vh]">
-          <Section icon={Building2} title="Basic Info">
-            <Field label="Lab Name" value={lab.name} />
-            <Field label="Lab ID" value={lab.labKey} />
-            <Field
-              label="Type"
-              value={lab.type === "hospital" ? "Hospital" : lab.type === "diagnostic" ? "Diagnostic Center" : null}
-            />
-            <Field label="Registration No." value={lab.registrationNumber} />
-          </Section>
-
-          <Section icon={Phone} title="Contact">
-            <Field label="Primary Phone" value={lab.contact?.primary} />
-            <Field label="Secondary Phone" value={lab.contact?.secondary} />
-            <Field label="Public Email" value={lab.contact?.publicEmail} />
-            <Field label="Private Email" value={lab.contact?.privateEmail} />
-            <Field label="District" value={lab.contact?.district} />
-            <Field label="Zone" value={lab.contact?.zone} />
-            <Field label="Address" value={lab.contact?.address} full />
-          </Section>
-
-          <Section icon={CreditCard} title="Billing">
-            <div className="sm:col-span-2">
-              <div className="grid grid-cols-3 divide-x divide-slate-100 border border-slate-100 rounded-xl overflow-hidden">
-                {[
-                  ["Invoice Fee", `৳${lab.billing?.perInvoiceFee ?? 0}`, "bg-indigo-50", "text-indigo-600"],
-                  ["Monthly Fee", `৳${lab.billing?.monthlyFee ?? 0}`, "bg-emerald-50", "text-emerald-600"],
-                  ["Commission", `৳${lab.billing?.commission ?? 0}`, "bg-amber-50", "text-amber-600"],
-                ].map(([l, v, bg, color]) => (
-                  <div key={l} className={`${bg} text-center py-4`}>
-                    <p className="text-[9.5px] font-semibold text-slate-400 uppercase tracking-widest">{l}</p>
-                    <p className={`text-xl font-bold mt-1 tracking-tight ${color}`}>{v}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Section>
-        </div>
-
-        <div className="flex items-center justify-end gap-2 px-5 py-3.5 bg-slate-50 border-t border-slate-100">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-xs font-semibold text-slate-500 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-};
-
-/* ─── Lab Modal (Create + Edit) ──────────────────────────── */
-
-const LAB_TABS = [
-  { id: "info", label: "Info", icon: Building2, sub: "Basic details" },
-  { id: "contact", label: "Contact", icon: Phone, sub: "Phone & location" },
-  { id: "billing", label: "Billing", icon: CreditCard, sub: "Fees & commission" },
-];
 
 const LAB_TYPE_OPTIONS = [
   { value: "diagnostic", label: "Diagnostic Center", icon: FlaskConical },
   { value: "hospital", label: "Hospital", icon: Building2 },
 ];
 
-const LabModal = ({ isOpen, onClose, onSubmit, editLab = null }) => {
-  const isEdit = !!editLab;
+/* ─── Portal shell ────────────────────────────────────────── */
+
+const Sheet = ({ isOpen, onClose, children, width = "560px" }) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-[#1C2321]/45 backdrop-blur-[1px]" onClick={onClose} />
+      <div
+        className="relative w-full max-h-[88vh] flex flex-col overflow-hidden border"
+        style={{ maxWidth: width, background: PAPER, borderColor: LINE, borderRadius: "3px" }}
+      >
+        {children}
+      </div>
+    </div>,
+    document.body,
+  );
+};
+
+/* ─── Primitives ─────────────────────────────────────────── */
+
+const Field = ({ label, hint, children }) => (
+  <div>
+    {label && (
+      <label className="block text-[10px] font-semibold uppercase tracking-[0.09em] mb-1.5" style={{ color: INK_MUTE }}>
+        {label}
+      </label>
+    )}
+    {children}
+    {hint && (
+      <p className="text-[10.5px] mt-1" style={{ color: INK_MUTE }}>
+        {hint}
+      </p>
+    )}
+  </div>
+);
+
+const inputBase = "w-full px-3 py-2.5 text-[13px] bg-white outline-none transition-colors placeholder:text-[#B8B2A2]";
+const inputStyle = { border: `1px solid ${LINE}`, borderRadius: "2px", color: INK, fontFamily: "inherit" };
+
+const TextInput = ({ label, hint, ...props }) => (
+  <Field label={label} hint={hint}>
+    <input
+      className={inputBase}
+      style={inputStyle}
+      onFocus={(e) => (e.target.style.borderColor = TEAL)}
+      onBlur={(e) => (e.target.style.borderColor = LINE)}
+      {...props}
+    />
+  </Field>
+);
+
+const MonoInput = ({ label, hint, ...props }) => (
+  <Field label={label} hint={hint}>
+    <input
+      className={`${inputBase} font-mono tracking-wide`}
+      style={inputStyle}
+      onFocus={(e) => (e.target.style.borderColor = TEAL)}
+      onBlur={(e) => (e.target.style.borderColor = LINE)}
+      {...props}
+    />
+  </Field>
+);
+
+const SelectInput = ({ label, hint, children, ...props }) => (
+  <Field label={label} hint={hint}>
+    <select className={inputBase} style={inputStyle} {...props}>
+      {children}
+    </select>
+  </Field>
+);
+
+const StampToggle = ({ active, onChange, onLabel = "Active", offLabel = "Inactive" }) => (
+  <button
+    type="button"
+    onClick={() => onChange(!active)}
+    className="flex items-center gap-2 bg-transparent border-none cursor-pointer p-0"
+  >
+    <span
+      className="w-[18px] h-[18px] flex items-center justify-center shrink-0 transition-colors"
+      style={{
+        border: `1.5px solid ${active ? TEAL : LINE}`,
+        borderRadius: "2px",
+        background: active ? TEAL : "white",
+      }}
+    >
+      {active && (
+        <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+          <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </span>
+    <span className="text-[12px] font-semibold" style={{ color: active ? TEAL_DARK : INK_MUTE }}>
+      {active ? onLabel : offLabel}
+    </span>
+  </button>
+);
+
+const StatusStamp = ({ active }) => (
+  <span
+    className="inline-flex items-center gap-1 px-1.5 py-[1px] text-[9px] font-bold uppercase tracking-[0.08em] select-none"
+    style={{
+      color: active ? TEAL_DARK : "#9B9587",
+      border: `1px dashed ${active ? TEAL : "#C7C1B2"}`,
+      borderRadius: "2px",
+      transform: "rotate(-1.5deg)",
+    }}
+  >
+    {active ? "Active" : "Inactive"}
+  </span>
+);
+
+const GhostBtn = ({ children, ...props }) => (
+  <button
+    type="button"
+    className="px-3.5 py-2 text-[11.5px] font-semibold bg-white transition-colors"
+    style={{ color: INK_MUTE, border: `1px solid ${LINE}`, borderRadius: "2px" }}
+    {...props}
+  >
+    {children}
+  </button>
+);
+
+const SolidBtn = ({ children, tone = TEAL, toneDark = TEAL_DARK, loading, ...props }) => (
+  <button
+    type="button"
+    className="flex items-center gap-2 px-4 py-2 text-[11.5px] font-bold text-white transition-colors disabled:opacity-60"
+    style={{ background: tone, borderRadius: "2px" }}
+    onMouseEnter={(e) => !props.disabled && (e.currentTarget.style.background = toneDark)}
+    onMouseLeave={(e) => (e.currentTarget.style.background = tone)}
+    {...props}
+  >
+    {loading && <div className="w-3 h-3 rounded-full border-2 border-white/30 border-t-white animate-spin" />}
+    {children}
+  </button>
+);
+
+const IconBtn = ({ icon: Icon, tone = INK_MUTE, tint = "#F1EFE7", title, ...props }) => (
+  <button
+    title={title}
+    className="w-7 h-7 flex items-center justify-center transition-colors"
+    style={{ color: INK_MUTE, border: `1px solid ${LINE}`, borderRadius: "2px", background: "white" }}
+    onMouseEnter={(e) => {
+      e.currentTarget.style.color = tone;
+      e.currentTarget.style.background = tint;
+      e.currentTarget.style.borderColor = tone;
+    }}
+    onMouseLeave={(e) => {
+      e.currentTarget.style.color = INK_MUTE;
+      e.currentTarget.style.background = "white";
+      e.currentTarget.style.borderColor = LINE;
+    }}
+    {...props}
+  >
+    <Icon size={12} />
+  </button>
+);
+
+/* ─── Lab type flag ──────────────────────────────────────── */
+
+const LAB_TYPE_META = {
+  diagnostic: { label: "Diagnostic", short: "Dx", icon: FlaskConical, color: TEAL, tint: TEAL_TINT },
+  hospital: { label: "Hospital", short: "Hosp", icon: Building2, color: RUST, tint: RUST_TINT },
+};
+
+const TypeFlag = ({ type, compact }) => {
+  const meta = LAB_TYPE_META[type];
+  if (!meta) return null;
+  const Icon = meta.icon;
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-1.5 py-[1px] text-[9.5px] font-bold uppercase tracking-wide"
+      style={{ color: meta.color, background: meta.tint, borderRadius: "2px" }}
+    >
+      <Icon size={9} />
+      {compact ? meta.short : meta.label}
+    </span>
+  );
+};
+
+/* ─── Ledger row-pair ─────────────────────────────────────── */
+
+const Leader = ({ label, value }) =>
+  value ? (
+    <div className="flex items-baseline gap-2 py-1">
+      <span className="text-[10.5px] uppercase tracking-wide shrink-0" style={{ color: INK_MUTE }}>
+        {label}
+      </span>
+      <span className="flex-1 border-b border-dotted translate-y-[-3px]" style={{ borderColor: "#C7C1B2" }} />
+      <span className="text-[12.5px] font-medium text-right" style={{ color: INK }}>
+        {value}
+      </span>
+    </div>
+  ) : null;
+
+/* ─── Single-section edit modal shell ────────────────────── */
+
+const SectionModal = ({ isOpen, onClose, title, icon: Icon, tone, children, onSave, loading }) => (
+  <Sheet isOpen={isOpen} onClose={onClose} width="440px">
+    <div
+      className="flex items-center justify-between px-5 py-4 border-b"
+      style={{ borderColor: LINE, background: PAPER }}
+    >
+      <div className="flex items-center gap-3">
+        <div
+          className="w-9 h-9 flex items-center justify-center shrink-0"
+          style={{ background: tone, borderRadius: "2px" }}
+        >
+          <Icon size={15} className="text-white" />
+        </div>
+        <p className="text-[13.5px] font-bold tracking-tight" style={{ color: INK }}>
+          {title}
+        </p>
+      </div>
+      <IconBtn icon={X} onClick={onClose} title="Close" />
+    </div>
+    <div className="flex-1 overflow-y-auto p-5" style={dotGround}>
+      <div className="p-4 space-y-4" style={{ background: PAPER, border: `1px solid ${LINE}`, borderRadius: "2px" }}>
+        {children}
+      </div>
+    </div>
+    <div
+      className="flex items-center justify-end gap-2 px-5 py-3.5 border-t"
+      style={{ borderColor: LINE, background: PAPER }}
+    >
+      <GhostBtn onClick={onClose}>Cancel</GhostBtn>
+      <SolidBtn onClick={onSave} disabled={loading} loading={loading}>
+        Save Changes
+      </SolidBtn>
+    </div>
+  </Sheet>
+);
+
+/* ─── Section 1: Lab Details modal ───────────────────────── */
+
+const LabDetailsModal = ({ isOpen, onClose, lab, onSaved, showPopup }) => {
+  const [form, setForm] = useState({ name: "", type: "", registrationNumber: "" });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && lab) {
+      setForm({
+        name: lab.name ?? "",
+        type: lab.type ?? "",
+        registrationNumber: lab.registrationNumber ?? "",
+      });
+    }
+  }, [isOpen, lab]);
+
+  const handleSave = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      await labService.updateLabDetails(lab._id, {
+        name: form.name,
+        type: form.type || undefined,
+        registrationNumber: form.registrationNumber || undefined,
+      });
+      showPopup("success", "Lab details updated.");
+      await onSaved();
+      onClose();
+    } catch (err) {
+      showPopup("error", err?.response?.data?.message || "Failed to update lab details.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!lab) return null;
+
+  return (
+    <SectionModal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Edit Lab Details"
+      icon={Building2}
+      tone={TEAL}
+      onSave={handleSave}
+      loading={loading}
+    >
+      <TextInput
+        label="Lab Name *"
+        value={form.name}
+        onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+        placeholder="City Diagnostic"
+      />
+
+      <div>
+        <label className="block text-[10px] font-semibold uppercase tracking-[0.09em] mb-2" style={{ color: INK_MUTE }}>
+          Lab Type <span className="normal-case font-normal">(optional)</span>
+        </label>
+        <div className="grid grid-cols-2 gap-2">
+          {LAB_TYPE_OPTIONS.map(({ value, label, icon: Icon }) => {
+            const isSelected = form.type === value;
+            const c = value === "hospital" ? RUST : TEAL;
+            const tint = value === "hospital" ? RUST_TINT : TEAL_TINT;
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, type: f.type === value ? "" : value }))}
+                className="flex items-center gap-2.5 px-4 py-2.5 text-[12px] font-semibold transition-colors cursor-pointer"
+                style={{
+                  border: `1px solid ${isSelected ? c : LINE}`,
+                  borderRadius: "2px",
+                  background: isSelected ? tint : "white",
+                  color: isSelected ? c : INK_MUTE,
+                }}
+              >
+                <Icon size={13} style={{ color: isSelected ? c : "#B8B2A2" }} />
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <TextInput
+        label="Registration Number"
+        value={form.registrationNumber}
+        onChange={(e) => setForm((f) => ({ ...f, registrationNumber: e.target.value }))}
+        placeholder="Optional — e.g. DGDA-2024-00123"
+      />
+    </SectionModal>
+  );
+};
+
+/* ─── Section 2: Contact modal ────────────────────────────── */
+
+const LabContactModal = ({ isOpen, onClose, lab, onSaved, showPopup }) => {
+  const [form, setForm] = useState(EMPTY_LAB.contact);
+  const [zones, setZones] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen || !lab) return;
+    setForm({
+      primary: lab.contact?.primary ?? "",
+      secondary: lab.contact?.secondary ?? "",
+      publicEmail: lab.contact?.publicEmail ?? "",
+      privateEmail: lab.contact?.privateEmail ?? "",
+      address: lab.contact?.address ?? "",
+      district: lab.contact?.district ?? "",
+      zone: lab.contact?.zone ?? "",
+      zoneId: lab.contact?.zoneId ?? "",
+    });
+    zoneService
+      .getZones()
+      .then((r) => setZones(Array.isArray(r.data) ? r.data : (r.data?.data ?? [])))
+      .catch(() => setZones([]));
+  }, [isOpen, lab]);
+
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const handleSave = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      await labService.updateLabContact(lab._id, form);
+      showPopup("success", "Contact info updated.");
+      await onSaved();
+      onClose();
+    } catch (err) {
+      showPopup("error", err?.response?.data?.message || "Failed to update contact.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!lab) return null;
+
+  return (
+    <SectionModal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Edit Contact"
+      icon={Phone}
+      tone={VIOLET}
+      onSave={handleSave}
+      loading={loading}
+    >
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <TextInput label="Primary Phone" value={form.primary} onChange={set("primary")} placeholder="01700000000" />
+        <TextInput
+          label="Secondary Phone"
+          value={form.secondary}
+          onChange={set("secondary")}
+          placeholder="01800000000"
+        />
+        <TextInput
+          label="Public Email"
+          type="email"
+          value={form.publicEmail}
+          onChange={set("publicEmail")}
+          placeholder="lab@example.com"
+        />
+        <TextInput
+          label="Private Email"
+          type="email"
+          value={form.privateEmail}
+          onChange={set("privateEmail")}
+          placeholder="private@example.com"
+        />
+        <TextInput label="District" value={form.district} onChange={set("district")} placeholder="Dhaka" />
+        <SelectInput
+          label="Zone"
+          value={form.zoneId}
+          onChange={(e) => {
+            const z = zones.find((z) => z._id === e.target.value);
+            setForm((f) => ({ ...f, zone: z?.name ?? "", zoneId: e.target.value }));
+          }}
+        >
+          <option value="">— Select zone —</option>
+          {zones.map((z) => (
+            <option key={z._id} value={z._id}>
+              {z.name}
+            </option>
+          ))}
+        </SelectInput>
+      </div>
+      <TextInput label="Address" value={form.address} onChange={set("address")} placeholder="Full address" />
+    </SectionModal>
+  );
+};
+
+/* ─── Section 3: Billing modal ────────────────────────────── */
+
+const LabBillingModal = ({ isOpen, onClose, lab, onSaved, showPopup }) => {
+  const [form, setForm] = useState(EMPTY_LAB.billing);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && lab) {
+      setForm({
+        feePerInvoice: lab.billing?.feePerInvoice ?? "",
+        forceInvoiceFee: lab.billing?.forceInvoiceFee ?? false,
+        monthlyFee: lab.billing?.monthlyFee ?? "",
+        commission: lab.billing?.commission ?? "",
+      });
+    }
+  }, [isOpen, lab]);
+
+  const setB = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const handleSave = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      await labService.updateLabBilling(lab._id, {
+        feePerInvoice: Number(form.feePerInvoice) || 0,
+        forceInvoiceFee: !!form.forceInvoiceFee,
+        monthlyFee: Number(form.monthlyFee) || 0,
+        commission: Number(form.commission) || 0,
+      });
+      showPopup("success", "Billing updated.");
+      await onSaved();
+      onClose();
+    } catch (err) {
+      showPopup("error", err?.response?.data?.message || "Failed to update billing.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!lab) return null;
+
+  return (
+    <SectionModal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Edit Billing"
+      icon={CreditCard}
+      tone={AMBER}
+      onSave={handleSave}
+      loading={loading}
+    >
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <MonoInput
+          label="Fee / Invoice (৳)"
+          type="number"
+          value={form.feePerInvoice}
+          onChange={setB("feePerInvoice")}
+          placeholder="0"
+        />
+        <MonoInput
+          label="Monthly Fee (৳)"
+          type="number"
+          value={form.monthlyFee}
+          onChange={setB("monthlyFee")}
+          placeholder="0"
+        />
+        <MonoInput
+          label="Commission (৳)"
+          type="number"
+          value={form.commission}
+          onChange={setB("commission")}
+          placeholder="0"
+        />
+      </div>
+
+      <div
+        className="flex items-center justify-between px-3.5 py-3"
+        style={{
+          border: `1px solid ${form.forceInvoiceFee ? AMBER : LINE}`,
+          borderRadius: "2px",
+          background: form.forceInvoiceFee ? AMBER_TINT : GROUND,
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <Zap size={14} style={{ color: form.forceInvoiceFee ? AMBER : INK_MUTE }} />
+          <div>
+            <p className="text-[12.5px] font-semibold leading-none" style={{ color: INK }}>
+              Force Invoice Fee
+            </p>
+            <p className="text-[10.5px] mt-1" style={{ color: INK_MUTE }}>
+              When on, the invoice fee is always charged for this lab
+            </p>
+          </div>
+        </div>
+        <StampToggle
+          active={form.forceInvoiceFee}
+          onChange={(v) => setForm((f) => ({ ...f, forceInvoiceFee: v }))}
+          onLabel="On"
+          offLabel="Off"
+        />
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          ["Fee / invoice", `৳${form.feePerInvoice || 0}`, TEAL],
+          ["Monthly", `৳${form.monthlyFee || 0}`, VIOLET],
+          ["Commission", `৳${form.commission || 0}`, AMBER],
+        ].map(([l, v, c]) => (
+          <div key={l} className="text-center py-3" style={{ border: `1px solid ${LINE}`, borderRadius: "2px" }}>
+            <p className="text-[8.5px] font-bold uppercase tracking-wide" style={{ color: INK_MUTE }}>
+              {l}
+            </p>
+            <p className="text-[15px] font-bold font-mono mt-1" style={{ color: c }}>
+              {v}
+            </p>
+          </div>
+        ))}
+      </div>
+    </SectionModal>
+  );
+};
+
+/* ─── Lab View Sheet — with per-section edit pencils ─────── */
+
+const LabViewSheet = ({ isOpen, onClose, lab, onToggleActive }) => {
+  if (!lab) return null;
+
+  const SectionHead = ({ icon: Icon, title }) => (
+    <div className="flex items-center gap-2 mb-1.5 mt-4 first:mt-0">
+      <Icon size={11} style={{ color: TEAL }} />
+      <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: TEAL_DARK }}>
+        {title}
+      </p>
+    </div>
+  );
+
+  return (
+    <Sheet isOpen={isOpen} onClose={onClose} width="480px">
+      <div
+        className="flex items-center justify-between px-5 py-4 border-b"
+        style={{ borderColor: LINE, background: PAPER }}
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className="w-9 h-9 flex items-center justify-center shrink-0"
+            style={{ background: lab.type === "hospital" ? RUST_TINT : TEAL_TINT, borderRadius: "2px" }}
+          >
+            {lab.type === "hospital" ? (
+              <Building2 size={16} style={{ color: RUST }} />
+            ) : (
+              <FlaskConical size={16} style={{ color: TEAL }} />
+            )}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="text-[13.5px] font-bold tracking-tight leading-none" style={{ color: INK }}>
+                {lab.name}
+              </p>
+              <TypeFlag type={lab.type} />
+            </div>
+            <div className="flex items-center gap-2 mt-1.5">
+              <span
+                className="font-mono text-[10.5px] px-1.5 py-[1px]"
+                style={{ background: "#F1EFE7", color: INK_MUTE, borderRadius: "2px" }}
+              >
+                #{lab.labKey}
+              </span>
+              <button
+                type="button"
+                onClick={() => onToggleActive(lab)}
+                title={lab.isActive ? "Deactivate lab" : "Activate lab"}
+                className="border-none bg-transparent cursor-pointer p-0"
+              >
+                <StatusStamp active={lab.isActive} />
+              </button>
+            </div>
+          </div>
+        </div>
+        <IconBtn icon={X} onClick={onClose} title="Close" />
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-5 py-4" style={dotGround}>
+        <div className="p-4 space-y-0" style={{ background: PAPER, border: `1px solid ${LINE}`, borderRadius: "2px" }}>
+          <SectionHead icon={Building2} title="Lab Details" />
+          <Leader label="Name" value={lab.name} />
+          <Leader label="Lab ID" value={lab.labKey} />
+          <Leader label="Type" value={LAB_TYPE_META[lab.type]?.label} />
+          <Leader label="Registration No." value={lab.registrationNumber} />
+
+          <SectionHead icon={Phone} title="Contact" />
+          <Leader label="Primary" value={lab.contact?.primary} />
+          <Leader label="Secondary" value={lab.contact?.secondary} />
+          <Leader label="Public email" value={lab.contact?.publicEmail} />
+          <Leader label="Private email" value={lab.contact?.privateEmail} />
+          <Leader label="District" value={lab.contact?.district} />
+          <Leader label="Zone" value={lab.contact?.zone} />
+          <Leader label="Address" value={lab.contact?.address} />
+
+          <SectionHead icon={CreditCard} title="Billing" />
+          <div className="grid grid-cols-3 gap-2 mt-1">
+            {[
+              ["Fee / invoice", `৳${lab.billing?.feePerInvoice ?? 0}`, TEAL],
+              ["Monthly fee", `৳${lab.billing?.monthlyFee ?? 0}`, VIOLET],
+              ["Commission", `৳${lab.billing?.commission ?? 0}`, AMBER],
+            ].map(([l, v, c]) => (
+              <div key={l} className="text-center py-3" style={{ border: `1px solid ${LINE}`, borderRadius: "2px" }}>
+                <p className="text-[8.5px] font-bold uppercase tracking-wide" style={{ color: INK_MUTE }}>
+                  {l}
+                </p>
+                <p className="text-[15px] font-bold font-mono mt-1" style={{ color: c }}>
+                  {v}
+                </p>
+              </div>
+            ))}
+          </div>
+          {lab.billing?.forceInvoiceFee && (
+            <p
+              className="flex items-center gap-1.5 mt-2.5 px-2.5 py-1.5 text-[11px] font-semibold"
+              style={{ background: AMBER_TINT, color: AMBER, borderRadius: "2px" }}
+            >
+              <Zap size={11} /> Invoice fee is forced on for this lab
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div
+        className="flex items-center justify-end px-5 py-3 border-t"
+        style={{ borderColor: LINE, background: PAPER }}
+      >
+        <GhostBtn onClick={onClose}>Close</GhostBtn>
+      </div>
+    </Sheet>
+  );
+};
+
+/* ─── Lab Create Modal (create only, section tabs) ───────── */
+
+const LAB_TABS = [
+  { id: "details", label: "Details", icon: Building2 },
+  { id: "contact", label: "Contact", icon: Phone },
+  { id: "billing", label: "Billing", icon: CreditCard },
+];
+
+const LabCreateModal = ({ isOpen, onClose, onSubmit }) => {
   const [form, setForm] = useState(EMPTY_LAB);
-  const [tab, setTab] = useState("info");
+  const [tab, setTab] = useState("details");
   const [loading, setLoading] = useState(false);
   const [zones, setZones] = useState([]);
 
   useEffect(() => {
     if (!isOpen) return;
-    setTab("info");
-    if (isEdit) {
-      setForm({
-        name: editLab.name ?? "",
-        labKey: editLab.labKey ?? "",
-        type: editLab.type ?? "",
-        registrationNumber: editLab.registrationNumber ?? "",
-        isActive: editLab.isActive ?? true,
-        contact: {
-          primary: editLab.contact?.primary ?? "",
-          secondary: editLab.contact?.secondary ?? "",
-          publicEmail: editLab.contact?.publicEmail ?? "",
-          privateEmail: editLab.contact?.privateEmail ?? "",
-          address: editLab.contact?.address ?? "",
-          district: editLab.contact?.district ?? "",
-          zone: editLab.contact?.zone ?? "",
-          zoneId: editLab.contact?.zoneId ?? "",
-        },
-        billing: {
-          perInvoiceFee: editLab.billing?.perInvoiceFee ?? "",
-          monthlyFee: editLab.billing?.monthlyFee ?? "",
-          commission: editLab.billing?.commission ?? "",
-        },
-      });
-    } else {
-      setForm(EMPTY_LAB);
-    }
+    setTab("details");
+    setForm(EMPTY_LAB);
     zoneService
       .getZones()
       .then((r) => setZones(Array.isArray(r.data) ? r.data : (r.data?.data ?? [])))
       .catch(() => setZones([]));
-  }, [isOpen, editLab]);
+  }, [isOpen]);
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const setC = (k) => (e) => setForm((f) => ({ ...f, contact: { ...f.contact, [k]: e.target.value } }));
   const setB = (k) => (e) => setForm((f) => ({ ...f, billing: { ...f.billing, [k]: e.target.value } }));
 
@@ -401,108 +792,101 @@ const LabModal = ({ isOpen, onClose, onSubmit, editLab = null }) => {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="md">
-      <div className="flex flex-col min-h-full">
-        <div className="sticky top-0 z-10 bg-white border-b border-slate-100">
-          <div className="flex items-center justify-between px-5 py-4">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-indigo-500 flex items-center justify-center shrink-0">
-                {isEdit ? (
-                  <Pencil size={15} className="text-white" />
-                ) : (
-                  <FlaskConical size={16} className="text-white" />
-                )}
-              </div>
-              <div>
-                <p className="text-sm font-bold text-slate-800 tracking-tight leading-none">
-                  {isEdit ? `Edit — ${editLab.name}` : "Register Lab"}
-                </p>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Step {tabIdx + 1} of {LAB_TABS.length} — {LAB_TABS[tabIdx].sub}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 border border-slate-200 transition"
+    <Sheet isOpen={isOpen} onClose={onClose} width="560px">
+      <div className="border-b" style={{ borderColor: LINE, background: PAPER }}>
+        <div className="flex items-center justify-between px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-9 h-9 flex items-center justify-center shrink-0"
+              style={{ background: TEAL, borderRadius: "2px" }}
             >
-              <X size={14} />
-            </button>
+              <FlaskConical size={15} className="text-white" />
+            </div>
+            <div>
+              <p className="text-[13.5px] font-bold tracking-tight leading-none" style={{ color: INK }}>
+                Register Lab
+              </p>
+              <p className="text-[10.5px] mt-1" style={{ color: INK_MUTE }}>
+                Section {tabIdx + 1} of {LAB_TABS.length}
+              </p>
+            </div>
           </div>
-
-          <div className="flex gap-1.5 px-5 pb-3">
-            {LAB_TABS.map(({ id, label, icon: Icon }, i) => {
-              const isActive = tab === id;
-              const isComplete = i < tabIdx;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setTab(id)}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl border-none text-xs font-semibold transition-all cursor-pointer
-                    ${isActive ? "bg-indigo-50 text-indigo-700" : isComplete ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-400"}`}
-                >
-                  <span
-                    className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition-colors
-                    ${isActive ? "bg-indigo-500" : isComplete ? "bg-emerald-500" : "bg-slate-200"}`}
-                  >
-                    <Icon size={11} className="text-white" />
-                  </span>
-                  <span className="font-semibold">{label}</span>
-                </button>
-              );
-            })}
-          </div>
+          <IconBtn icon={X} onClick={onClose} title="Close" />
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          {/* INFO */}
-          <div className={`${tab === "info" ? "flex" : "hidden"} flex-col gap-4 p-5`}>
+        <div className="flex gap-1.5 px-5 pb-3">
+          {LAB_TABS.map(({ id, label, icon: Icon }, i) => {
+            const isActive = tab === id;
+            const isDone = i < tabIdx;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setTab(id)}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 px-2 text-[11.5px] font-bold border-none cursor-pointer transition-colors"
+                style={{
+                  borderRadius: "2px",
+                  background: isActive ? TEAL_TINT : isDone ? "#EEF6F1" : "#F1EFE7",
+                  color: isActive ? TEAL_DARK : isDone ? TEAL : INK_MUTE,
+                }}
+              >
+                <Icon size={12} />
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto" style={dotGround}>
+        {/* DETAILS */}
+        <div className={`${tab === "details" ? "flex" : "hidden"} flex-col gap-4 p-5`}>
+          <div
+            className="p-4 space-y-4"
+            style={{ background: PAPER, border: `1px solid ${LINE}`, borderRadius: "2px" }}
+          >
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <TextInput label="Lab Name *" value={form.name} onChange={set("name")} placeholder="City Diagnostic" />
               <TextInput
+                label="Lab Name *"
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="City Diagnostic"
+              />
+              <MonoInput
                 label="Lab ID (5 digits) *"
                 value={form.labKey}
                 onChange={(e) => setForm((f) => ({ ...f, labKey: e.target.value.replace(/\D/g, "").slice(0, 5) }))}
                 placeholder="12345"
                 maxLength={5}
-                disabled={isEdit}
               />
             </div>
 
-            {isEdit && (
-              <p className="text-[11px] text-slate-400 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
-                Lab ID cannot be changed after creation.
-              </p>
-            )}
-
             <div>
-              <label className="block text-[10.5px] font-semibold text-slate-400 uppercase tracking-widest mb-2">
-                Lab Type <span className="normal-case font-normal text-slate-300">(optional)</span>
+              <label
+                className="block text-[10px] font-semibold uppercase tracking-[0.09em] mb-2"
+                style={{ color: INK_MUTE }}
+              >
+                Lab Type <span className="normal-case font-normal">(optional)</span>
               </label>
               <div className="grid grid-cols-2 gap-2">
                 {LAB_TYPE_OPTIONS.map(({ value, label, icon: Icon }) => {
                   const isSelected = form.type === value;
+                  const c = value === "hospital" ? RUST : TEAL;
+                  const tint = value === "hospital" ? RUST_TINT : TEAL_TINT;
                   return (
                     <button
                       key={value}
                       type="button"
                       onClick={() => setForm((f) => ({ ...f, type: f.type === value ? "" : value }))}
-                      className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border text-[12.5px] font-semibold transition-all cursor-pointer
-                        ${
-                          isSelected
-                            ? value === "hospital"
-                              ? "bg-rose-50 border-rose-300 text-rose-700"
-                              : "bg-indigo-50 border-indigo-300 text-indigo-700"
-                            : "bg-white border-slate-200 text-slate-400 hover:border-slate-300 hover:text-slate-500"
-                        }`}
+                      className="flex items-center gap-2.5 px-4 py-2.5 text-[12px] font-semibold transition-colors cursor-pointer"
+                      style={{
+                        border: `1px solid ${isSelected ? c : LINE}`,
+                        borderRadius: "2px",
+                        background: isSelected ? tint : "white",
+                        color: isSelected ? c : INK_MUTE,
+                      }}
                     >
-                      <Icon
-                        size={14}
-                        className={
-                          isSelected ? (value === "hospital" ? "text-rose-500" : "text-indigo-500") : "text-slate-300"
-                        }
-                      />
+                      <Icon size={13} style={{ color: isSelected ? c : "#B8B2A2" }} />
                       {label}
                     </button>
                   );
@@ -517,17 +901,29 @@ const LabModal = ({ isOpen, onClose, onSubmit, editLab = null }) => {
               placeholder="Optional — e.g. DGDA-2024-00123"
             />
 
-            <div className="flex items-center justify-between px-4 py-3.5 rounded-xl border border-slate-100 bg-slate-50">
+            <div
+              className="flex items-center justify-between px-3.5 py-3"
+              style={{ border: `1px solid ${LINE}`, borderRadius: "2px", background: GROUND }}
+            >
               <div>
-                <p className="text-[13px] font-semibold text-slate-700 leading-none">Lab Status</p>
-                <p className="text-[11px] text-slate-400 mt-1">Toggle to activate or deactivate this lab</p>
+                <p className="text-[12.5px] font-semibold leading-none" style={{ color: INK }}>
+                  Lab Status
+                </p>
+                <p className="text-[10.5px] mt-1" style={{ color: INK_MUTE }}>
+                  Toggle to activate or deactivate this lab
+                </p>
               </div>
-              <SwitchToggle active={form.isActive} onChange={(v) => setForm((f) => ({ ...f, isActive: v }))} />
+              <StampToggle active={form.isActive} onChange={(v) => setForm((f) => ({ ...f, isActive: v }))} />
             </div>
           </div>
+        </div>
 
-          {/* CONTACT */}
-          <div className={`${tab === "contact" ? "flex" : "hidden"} flex-col gap-3 p-5`}>
+        {/* CONTACT */}
+        <div className={`${tab === "contact" ? "flex" : "hidden"} flex-col gap-3 p-5`}>
+          <div
+            className="p-4 space-y-3"
+            style={{ background: PAPER, border: `1px solid ${LINE}`, borderRadius: "2px" }}
+          >
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <TextInput
                 label="Primary Phone"
@@ -566,10 +962,7 @@ const LabModal = ({ isOpen, onClose, onSubmit, editLab = null }) => {
                 value={form.contact.zoneId}
                 onChange={(e) => {
                   const z = zones.find((z) => z._id === e.target.value);
-                  setForm((f) => ({
-                    ...f,
-                    contact: { ...f.contact, zone: z?.name ?? "", zoneId: e.target.value },
-                  }));
+                  setForm((f) => ({ ...f, contact: { ...f.contact, zone: z?.name ?? "", zoneId: e.target.value } }));
                 }}
               >
                 <option value="">— Select zone —</option>
@@ -587,25 +980,30 @@ const LabModal = ({ isOpen, onClose, onSubmit, editLab = null }) => {
               placeholder="Full address"
             />
           </div>
+        </div>
 
-          {/* BILLING */}
-          <div className={`${tab === "billing" ? "flex" : "hidden"} flex-col gap-4 p-5`}>
+        {/* BILLING */}
+        <div className={`${tab === "billing" ? "flex" : "hidden"} flex-col gap-4 p-5`}>
+          <div
+            className="p-4 space-y-4"
+            style={{ background: PAPER, border: `1px solid ${LINE}`, borderRadius: "2px" }}
+          >
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <TextInput
-                label="Invoice Fee (৳)"
+              <MonoInput
+                label="Fee / Invoice (৳)"
                 type="number"
-                value={form.billing.perInvoiceFee}
-                onChange={setB("perInvoiceFee")}
+                value={form.billing.feePerInvoice}
+                onChange={setB("feePerInvoice")}
                 placeholder="0"
               />
-              <TextInput
+              <MonoInput
                 label="Monthly Fee (৳)"
                 type="number"
                 value={form.billing.monthlyFee}
                 onChange={setB("monthlyFee")}
                 placeholder="0"
               />
-              <TextInput
+              <MonoInput
                 label="Commission (৳)"
                 type="number"
                 value={form.billing.commission}
@@ -613,297 +1011,102 @@ const LabModal = ({ isOpen, onClose, onSubmit, editLab = null }) => {
                 placeholder="0"
               />
             </div>
-            <div className="grid grid-cols-3 divide-x divide-slate-100 border border-slate-100 rounded-xl overflow-hidden">
+
+            <div
+              className="flex items-center justify-between px-3.5 py-3"
+              style={{
+                border: `1px solid ${form.billing.forceInvoiceFee ? AMBER : LINE}`,
+                borderRadius: "2px",
+                background: form.billing.forceInvoiceFee ? AMBER_TINT : GROUND,
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <Zap size={14} style={{ color: form.billing.forceInvoiceFee ? AMBER : INK_MUTE }} />
+                <div>
+                  <p className="text-[12.5px] font-semibold leading-none" style={{ color: INK }}>
+                    Force Invoice Fee
+                  </p>
+                  <p className="text-[10.5px] mt-1" style={{ color: INK_MUTE }}>
+                    When on, the invoice fee is always charged for this lab
+                  </p>
+                </div>
+              </div>
+              <StampToggle
+                active={form.billing.forceInvoiceFee}
+                onChange={(v) => setForm((f) => ({ ...f, billing: { ...f.billing, forceInvoiceFee: v } }))}
+                onLabel="On"
+                offLabel="Off"
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
               {[
-                ["Invoice", `৳${form.billing.perInvoiceFee || 0}`, "bg-indigo-50", "text-indigo-600"],
-                ["Monthly", `৳${form.billing.monthlyFee || 0}`, "bg-emerald-50", "text-emerald-600"],
-                ["Commission", `৳${form.billing.commission || 0}`, "bg-amber-50", "text-amber-600"],
-              ].map(([l, v, bg, color]) => (
-                <div key={l} className={`${bg} text-center py-4`}>
-                  <p className="text-[9.5px] font-semibold text-slate-400 uppercase tracking-widest">{l}</p>
-                  <p className={`text-xl font-bold mt-1 tracking-tight ${color}`}>{v}</p>
+                ["Fee / invoice", `৳${form.billing.feePerInvoice || 0}`, TEAL],
+                ["Monthly", `৳${form.billing.monthlyFee || 0}`, VIOLET],
+                ["Commission", `৳${form.billing.commission || 0}`, AMBER],
+              ].map(([l, v, c]) => (
+                <div key={l} className="text-center py-3" style={{ border: `1px solid ${LINE}`, borderRadius: "2px" }}>
+                  <p className="text-[8.5px] font-bold uppercase tracking-wide" style={{ color: INK_MUTE }}>
+                    {l}
+                  </p>
+                  <p className="text-[15px] font-bold font-mono mt-1" style={{ color: c }}>
+                    {v}
+                  </p>
                 </div>
               ))}
             </div>
           </div>
         </div>
-
-        <div className="sticky bottom-0 z-10 flex items-center justify-between px-5 py-3.5 bg-slate-50 border-t border-slate-100">
-          <button
-            type="button"
-            onClick={() => tabIdx > 0 && setTab(LAB_TABS[tabIdx - 1].id)}
-            className={`flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-600 transition bg-transparent border-none cursor-pointer ${tabIdx === 0 ? "invisible" : ""}`}
-          >
-            <ChevronLeft size={15} /> Back
-          </button>
-
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-500 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition"
-            >
-              Cancel
-            </button>
-
-            {isLast ? (
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={loading}
-                className="flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 disabled:opacity-60 transition-all"
-              >
-                {loading && (
-                  <div className="w-3.5 h-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                )}
-                {isEdit ? "Save Changes" : "Register Lab"}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setTab(LAB_TABS[tabIdx + 1].id)}
-                className="flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 transition-all"
-              >
-                Next <ChevronRight size={14} />
-              </button>
-            )}
-          </div>
-        </div>
       </div>
-    </Modal>
-  );
-};
 
-/* ─── Staff Modal ────────────────────────────────────────── */
+      <div
+        className="flex items-center justify-between px-5 py-3.5 border-t"
+        style={{ borderColor: LINE, background: PAPER }}
+      >
+        <button
+          type="button"
+          onClick={() => tabIdx > 0 && setTab(LAB_TABS[tabIdx - 1].id)}
+          className={`flex items-center gap-1.5 text-[11.5px] font-semibold bg-transparent border-none cursor-pointer ${tabIdx === 0 ? "invisible" : ""}`}
+          style={{ color: INK_MUTE }}
+        >
+          <ChevronLeft size={14} /> Back
+        </button>
 
-const ROLE_OPTIONS = [
-  { value: "admin", label: "Admin", icon: ShieldCheck, color: "text-indigo-600 bg-indigo-50 border-indigo-200" },
-  { value: "staff", label: "Staff Member", icon: UserCog, color: "text-emerald-600 bg-emerald-50 border-emerald-200" },
-  { value: "support", label: "Support Admin", icon: Headset, color: "text-amber-600 bg-amber-50 border-amber-200" },
-];
-
-const PERM_LABELS = {
-  createInvoice: "Create Invoice",
-  editInvoice: "Edit Invoice",
-  deleteInvoice: "Delete Invoice",
-  cashmemo: "Cash Memo",
-  uploadReport: "Upload Report",
-  downloadReport: "Download Report",
-};
-
-const StaffModal = ({ isOpen, onClose, onSubmit, editStaff = null, labId }) => {
-  const isEdit = !!editStaff;
-  const [form, setForm] = useState({ ...EMPTY_STAFF });
-  const [loading, setLoading] = useState(false);
-  const [showPasswordField, setShowPasswordField] = useState(false);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    if (isEdit) {
-      setForm({
-        name: editStaff.name ?? "",
-        phone: editStaff.phone ?? "",
-        email: editStaff.email ?? "",
-        password: "",
-        role: editStaff.role ?? "staff",
-        isActive: editStaff.isActive ?? true,
-        permissions: { ...EMPTY_STAFF.permissions, ...(editStaff.permissions ?? {}) },
-      });
-      setShowPasswordField(false);
-    } else {
-      setForm({ ...EMPTY_STAFF });
-      setShowPasswordField(true);
-    }
-  }, [isOpen, editStaff]);
-
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-  const togglePerm = (k) => (v) => setForm((f) => ({ ...f, permissions: { ...f.permissions, [k]: v } }));
-  const allPerms = Object.values(form.permissions).every(Boolean);
-  const toggleAll = () => {
-    const next = !allPerms;
-    setForm((f) => ({
-      ...f,
-      permissions: Object.fromEntries(Object.keys(f.permissions).map((k) => [k, next])),
-    }));
-  };
-
-  const isSupportRole = form.role === "support";
-
-  const handleSubmit = async () => {
-    if (loading) return;
-    setLoading(true);
-    try {
-      await onSubmit(form);
-      onClose();
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} size="sm">
-      <div className="flex flex-col">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-violet-500 flex items-center justify-center shrink-0">
-              <Users size={15} className="text-white" />
-            </div>
-            <div>
-              <p className="text-sm font-bold text-slate-800 tracking-tight leading-none">
-                {isEdit ? "Edit Staff Member" : "Add Staff Member"}
-              </p>
-              <p className="text-[11px] text-slate-400 mt-1">{isEdit ? editStaff.name : "Fill in the details below"}</p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 border border-slate-200 transition"
-          >
-            <X size={14} />
-          </button>
-        </div>
-
-        <div className="flex flex-col gap-4 p-5 overflow-y-auto max-h-[60vh]">
-          {!isEdit && (
-            <div>
-              <label className="block text-[10.5px] font-semibold text-slate-400 uppercase tracking-widest mb-2">
-                Role *
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {ROLE_OPTIONS.map(({ value, label, icon: Icon, color }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setForm((f) => ({ ...f, role: value }))}
-                    className={`flex flex-col items-center gap-1.5 py-2.5 px-2 rounded-xl border text-[11px] font-semibold transition-all cursor-pointer
-                      ${
-                        form.role === value
-                          ? color + " shadow-sm"
-                          : "bg-white border-slate-200 text-slate-400 hover:border-slate-300"
-                      }`}
-                  >
-                    <Icon size={14} />
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {isSupportRole && !isEdit ? (
-            <PasswordInput
-              label="Password *"
-              value={form.password}
-              onChange={set("password")}
-              placeholder="Min 6 characters"
-            />
+        <div className="flex gap-2">
+          <GhostBtn onClick={onClose}>Cancel</GhostBtn>
+          {isLast ? (
+            <SolidBtn onClick={handleSubmit} disabled={loading} loading={loading}>
+              Register Lab
+            </SolidBtn>
           ) : (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <TextInput label="Full Name *" value={form.name} onChange={set("name")} placeholder="Dr. Ahmed" />
-                <TextInput label="Phone *" value={form.phone} onChange={set("phone")} placeholder="01700000000" />
-                <TextInput
-                  label="Email"
-                  type="email"
-                  value={form.email}
-                  onChange={set("email")}
-                  placeholder="optional"
-                />
-                {!isEdit || showPasswordField ? (
-                  <PasswordInput
-                    label={isEdit ? "New Password" : "Password *"}
-                    value={form.password}
-                    onChange={set("password")}
-                    placeholder="Min 6 characters"
-                  />
-                ) : (
-                  <div className="flex items-end">
-                    <button
-                      type="button"
-                      onClick={() => setShowPasswordField(true)}
-                      className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 border border-slate-200 bg-white rounded-xl px-3 py-2.5 hover:bg-slate-50 transition w-full justify-center"
-                    >
-                      <KeyRound size={12} /> Change Password
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between px-4 py-3 rounded-xl border border-slate-100 bg-slate-50">
-                <div>
-                  <p className="text-[13px] font-semibold text-slate-700 leading-none">Status</p>
-                  <p className="text-[11px] text-slate-400 mt-1">Active or inactive</p>
-                </div>
-                <SwitchToggle active={form.isActive} onChange={(v) => setForm((f) => ({ ...f, isActive: v }))} />
-              </div>
-
-              {(form.role === "staff" || (isEdit && editStaff?.role === "staff")) && (
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-[10.5px] font-semibold text-slate-400 uppercase tracking-widest">
-                      Permissions
-                    </label>
-                    <button
-                      type="button"
-                      onClick={toggleAll}
-                      className="text-[10.5px] font-semibold text-indigo-500 hover:text-indigo-700 transition bg-transparent border-none cursor-pointer"
-                    >
-                      {allPerms ? "Deselect all" : "Select all"}
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-y-2.5 gap-x-4 px-4 py-3 rounded-xl border border-slate-100 bg-slate-50">
-                    {Object.entries(PERM_LABELS).map(([k, label]) => (
-                      <PermissionToggle key={k} label={label} checked={form.permissions[k]} onChange={togglePerm(k)} />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
+            <SolidBtn onClick={() => setTab(LAB_TABS[tabIdx + 1].id)}>
+              Next <ChevronRight size={14} />
+            </SolidBtn>
           )}
         </div>
-
-        <div className="flex items-center justify-end gap-2 px-5 py-3.5 bg-slate-50 border-t border-slate-100">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-xs font-semibold text-slate-500 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={loading}
-            className="flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-violet-500 rounded-lg hover:bg-violet-600 disabled:opacity-60 transition-all"
-          >
-            {loading && (
-              <div className="w-3.5 h-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-            )}
-            {isEdit ? "Save Changes" : "Add Member"}
-          </button>
-        </div>
       </div>
-    </Modal>
+    </Sheet>
   );
 };
 
-/* ─── Staff Panel ────────────────────────────────────────── */
+/* ─── Staff Panel + Drawer (VIEW ONLY — backend exposes no staff
+   create/update/delete/activate routes on labRoutes.js, only
+   GET /labs/:labId/staff and GET /labs/:labId/staff/:id) ────── */
 
 const ROLE_META = {
-  admin: { label: "Admin", icon: ShieldCheck, color: "text-indigo-600 bg-indigo-50 border-indigo-200" },
-  staff: { label: "Staff", icon: UserCog, color: "text-emerald-600 bg-emerald-50 border-emerald-200" },
-  supportAdmin: { label: "Support", icon: Headset, color: "text-amber-600 bg-amber-50 border-amber-200" },
+  admin: { label: "Admin", icon: ShieldCheck, color: TEAL, tint: TEAL_TINT },
+  staff: { label: "Staff", icon: UserCog, color: VIOLET, tint: VIOLET_TINT },
+  supportAdmin: { label: "Support", icon: Headset, color: AMBER, tint: AMBER_TINT },
 };
 
 const StaffPanel = ({ lab, onClose, showPopup }) => {
   const [staffList, setStaffList] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [staffModal, setStaffModal] = useState({ open: false, edit: null });
 
   const fetchStaff = async () => {
     setLoading(true);
     try {
-      const r = await staffService.getAll(lab._id);
+      const r = await labService.getAllStaff(lab._id);
       setStaffList(Array.isArray(r.data) ? r.data : []);
     } catch {
       showPopup("error", "Failed to load staff.");
@@ -916,133 +1119,60 @@ const StaffPanel = ({ lab, onClose, showPopup }) => {
     fetchStaff();
   }, [lab._id]);
 
-  const handleStaffSubmit = async (form) => {
-    try {
-      if (staffModal.edit) {
-        const updates = {};
-        if (form.name) updates.name = form.name;
-        if (form.phone) updates.phone = form.phone;
-        if (form.email) updates.email = form.email;
-        if (form.password) updates.password = form.password;
-        if (form.permissions) updates.permissions = form.permissions;
-        updates.isActive = form.isActive;
-
-        if (staffModal.edit.role === "supportAdmin") {
-          if (form.password) await staffService.updateSupportPassword(lab._id, { password: form.password });
-        } else {
-          await staffService.update(lab._id, staffModal.edit._id, updates);
-        }
-        showPopup("success", "Staff member updated.");
-      } else {
-        if (form.role === "admin") {
-          await staffService.createAdmin(lab._id, {
-            name: form.name,
-            phone: form.phone,
-            email: form.email || undefined,
-            password: form.password,
-            isActive: form.isActive,
-          });
-        } else if (form.role === "support") {
-          await staffService.createSupport(lab._id, { password: form.password });
-        } else {
-          await staffService.createMember(lab._id, {
-            name: form.name,
-            phone: form.phone,
-            email: form.email || undefined,
-            password: form.password,
-            permissions: form.permissions,
-            isActive: form.isActive,
-          });
-        }
-        showPopup("success", "Staff member added.");
-      }
-      fetchStaff();
-    } catch (err) {
-      showPopup("error", err?.response?.data?.message || "Operation failed.");
-      throw err;
-    }
-  };
-
-  const handleToggleActive = async (member) => {
-    try {
-      if (member.isActive) {
-        await staffService.deactivate(lab._id, member._id);
-      } else {
-        await staffService.activate(lab._id, member._id);
-      }
-      fetchStaff();
-    } catch (err) {
-      showPopup("error", err?.response?.data?.message || "Failed to update status.");
-    }
-  };
-
-  const handleDelete = (member) => {
-    showPopup("confirm", `Delete "${member.name}"? This action cannot be undone.`, async () => {
-      try {
-        if (member.role === "supportAdmin") {
-          await staffService.deleteSupport(lab._id);
-        } else {
-          await staffService.delete(lab._id, member._id);
-        }
-        showPopup("success", "Staff member removed.");
-        fetchStaff();
-      } catch (err) {
-        showPopup("error", err?.response?.data?.message || "Failed to delete.");
-      }
-    });
-  };
-
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-white">
+      <div
+        className="flex items-center justify-between px-5 py-4 border-b"
+        style={{ borderColor: LINE, background: PAPER }}
+      >
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-violet-500 flex items-center justify-center shrink-0">
+          <div
+            className="w-9 h-9 flex items-center justify-center shrink-0"
+            style={{ background: VIOLET, borderRadius: "2px" }}
+          >
             <Users size={15} className="text-white" />
           </div>
           <div>
-            <p className="text-sm font-bold text-slate-800 tracking-tight leading-none">Staff — {lab.name}</p>
-            <p className="text-[11px] text-slate-400 mt-1">
+            <p className="text-[13.5px] font-bold tracking-tight leading-none" style={{ color: INK }}>
+              Staff — {lab.name}
+            </p>
+            <p className="text-[10.5px] mt-1" style={{ color: INK_MUTE }}>
               {staffList.length} member{staffList.length !== 1 ? "s" : ""}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setStaffModal({ open: true, edit: null })}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-violet-500 rounded-lg hover:bg-violet-600 transition-all"
-          >
-            <Plus size={12} /> Add
-          </button>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 border border-slate-200 transition"
-          >
-            <X size={14} />
-          </button>
-        </div>
+        <IconBtn icon={X} onClick={onClose} title="Close" />
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2" style={dotGround}>
         {loading ? (
           Array.from({ length: 4 }).map((_, i) => (
             <div
               key={i}
-              className="flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-100 bg-white animate-pulse"
+              className="flex items-center gap-3 px-4 py-3 animate-pulse"
+              style={{ background: "white", border: `1px solid ${LINE}`, borderRadius: "2px" }}
             >
-              <div className="w-8 h-8 bg-slate-100 rounded-lg shrink-0" />
+              <div className="w-8 h-8 shrink-0" style={{ background: "#EEEBE1", borderRadius: "2px" }} />
               <div className="flex-1 space-y-2">
-                <div className="h-3 bg-slate-100 rounded w-2/5" />
-                <div className="h-2.5 bg-slate-50 rounded w-3/5" />
+                <div className="h-3 w-2/5" style={{ background: "#EEEBE1", borderRadius: "2px" }} />
+                <div className="h-2.5 w-3/5" style={{ background: "#F2F0E8", borderRadius: "2px" }} />
               </div>
             </div>
           ))
         ) : staffList.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
-            <div className="w-12 h-12 rounded-2xl bg-slate-50 border-2 border-dashed border-slate-200 flex items-center justify-center mb-3">
-              <Users size={18} className="text-slate-300" />
+            <div
+              className="w-12 h-12 flex items-center justify-center mb-3"
+              style={{ border: `2px dashed ${LINE}`, borderRadius: "2px" }}
+            >
+              <Users size={18} style={{ color: "#C7C1B2" }} />
             </div>
-            <p className="text-sm font-bold text-slate-500 mb-1">No staff yet</p>
-            <p className="text-xs text-slate-400">Add an admin or staff member to get started.</p>
+            <p className="text-[13px] font-bold mb-1" style={{ color: INK_MUTE }}>
+              No staff yet
+            </p>
+            <p className="text-[11px]" style={{ color: INK_MUTE }}>
+              Staff members added elsewhere will appear here.
+            </p>
           </div>
         ) : (
           staffList.map((member) => {
@@ -1051,70 +1181,41 @@ const StaffPanel = ({ lab, onClose, showPopup }) => {
             return (
               <div
                 key={member._id}
-                className="flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-100 bg-white hover:border-slate-200 transition-all"
+                className="flex items-center gap-3 px-4 py-3 transition-colors"
+                style={{ background: "white", border: `1px solid ${LINE}`, borderRadius: "2px" }}
               >
-                <div className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 ${meta.color}`}>
+                <div
+                  className="w-8 h-8 flex items-center justify-center shrink-0"
+                  style={{ background: meta.tint, color: meta.color, borderRadius: "2px" }}
+                >
                   <Icon size={13} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className="text-[13px] font-bold text-slate-800 leading-none">{member.name}</p>
-                    <span className={`px-1.5 py-0.5 rounded-md text-[9.5px] font-bold border ${meta.color}`}>
+                    <p className="text-[12.5px] font-bold leading-none" style={{ color: INK }}>
+                      {member.name}
+                    </p>
+                    <span
+                      className="px-1.5 py-[1px] text-[9px] font-bold"
+                      style={{ color: meta.color, background: meta.tint, borderRadius: "2px" }}
+                    >
                       {meta.label}
                     </span>
-                    {!member.isActive && (
-                      <span className="px-1.5 py-0.5 rounded-md text-[9.5px] font-bold border bg-slate-50 text-slate-400 border-slate-200">
-                        Inactive
-                      </span>
-                    )}
+                    {!member.isActive && <StatusStamp active={false} />}
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-1">
+                  <p className="text-[10.5px] mt-1" style={{ color: INK_MUTE }}>
                     {member.phone}
                     {member.email ? ` · ${member.email}` : ""}
                   </p>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    onClick={() => setStaffModal({ open: true, edit: member })}
-                    className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition border border-slate-200 hover:border-indigo-200"
-                    title="Edit"
-                  >
-                    <Pencil size={12} />
-                  </button>
-                  <button
-                    onClick={() => handleToggleActive(member)}
-                    className={`w-7 h-7 flex items-center justify-center rounded-lg transition border border-slate-200
-                      ${member.isActive ? "text-slate-400 hover:text-amber-600 hover:bg-amber-50 hover:border-amber-200" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200"}`}
-                    title={member.isActive ? "Deactivate" : "Activate"}
-                  >
-                    {member.isActive ? <PowerOff size={12} /> : <Power size={12} />}
-                  </button>
-                  <button
-                    onClick={() => handleDelete(member)}
-                    className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition border border-slate-200 hover:border-rose-200"
-                    title="Delete"
-                  >
-                    <Trash2 size={12} />
-                  </button>
                 </div>
               </div>
             );
           })
         )}
       </div>
-
-      <StaffModal
-        isOpen={staffModal.open}
-        onClose={() => setStaffModal({ open: false, edit: null })}
-        onSubmit={handleStaffSubmit}
-        editStaff={staffModal.edit}
-        labId={lab._id}
-      />
     </div>
   );
 };
-
-/* ─── Staff Drawer ───────────────────────────────────────── */
 
 const StaffDrawer = ({ lab, onClose, showPopup }) => {
   useEffect(() => {
@@ -1123,192 +1224,224 @@ const StaffDrawer = ({ lab, onClose, showPopup }) => {
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="relative w-full max-w-md bg-white shadow-2xl flex flex-col animate-slide-in-right">
+  return createPortal(
+    <div className="fixed inset-0 z-[70] flex justify-end">
+      <div className="absolute inset-0 bg-[#1C2321]/45 backdrop-blur-[1px]" onClick={onClose} />
+      <div
+        className="relative w-full max-w-md shadow-2xl flex flex-col animate-slide-in-right border-l"
+        style={{ background: PAPER, borderColor: LINE }}
+      >
         <StaffPanel lab={lab} onClose={onClose} showPopup={showPopup} />
       </div>
       <style>{`
-        @keyframes slide-in-right {
-          from { transform: translateX(100%); opacity: 0; }
-          to   { transform: translateX(0);    opacity: 1; }
-        }
-        .animate-slide-in-right { animation: slide-in-right 0.22s cubic-bezier(0.16,1,0.3,1) forwards; }
+        @keyframes slide-in-right { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .animate-slide-in-right { animation: slide-in-right 0.2s cubic-bezier(0.16,1,0.3,1) forwards; }
       `}</style>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
-/* ─── Stat Card ──────────────────────────────────────────── */
+/* ─── Stat tally card ────────────────────────────────────── */
 
-const StatCard = ({ icon: Icon, label, value, color = "slate" }) => {
-  const styles = {
-    indigo: {
-      wrap: "bg-white border-slate-100",
-      icon: "bg-indigo-50 border-indigo-100 text-indigo-500",
-      val: "text-slate-800",
-    },
-    green: {
-      wrap: "bg-white border-slate-100",
-      icon: "bg-emerald-50 border-emerald-100 text-emerald-600",
-      val: "text-slate-800",
-    },
-    slate: {
-      wrap: "bg-white border-slate-100",
-      icon: "bg-slate-50 border-slate-200 text-slate-400",
-      val: "text-slate-800",
-    },
-  };
-  const s = styles[color] ?? styles.slate;
-  return (
-    <div className={`flex items-center gap-3 px-4 py-3.5 rounded-xl border ${s.wrap}`}>
-      <div className={`w-9 h-9 rounded-lg border flex items-center justify-center shrink-0 ${s.icon}`}>
-        <Icon size={16} />
-      </div>
-      <div>
-        <p className={`text-xl font-bold leading-none tracking-tight ${s.val}`}>{value}</p>
-        <p className="text-[11px] text-slate-400 mt-1">{label}</p>
-      </div>
-    </div>
-  );
-};
-
-/* ─── Lab Row ────────────────────────────────────────────── */
-
-const LabRow = ({ lab, index, onView, onEdit, onManageStaff }) => (
+const StatCard = ({ icon: Icon, label, value, tone = TEAL, tint = TEAL_TINT }) => (
   <div
-    className="flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-100 bg-white hover:border-slate-200 hover:shadow-sm transition-all"
-    style={{ animationDelay: `${index * 0.03}s` }}
+    className="flex items-center gap-3 px-4 py-3.5"
+    style={{ background: PAPER, border: `1px solid ${LINE}`, borderRadius: "2px" }}
   >
     <div
-      className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center border ${
-        lab.isActive
-          ? lab.type === "hospital"
-            ? "bg-rose-50 border-rose-200"
-            : "bg-indigo-50 border-indigo-200"
-          : "bg-slate-50 border-slate-200"
-      }`}
+      className="w-9 h-9 flex items-center justify-center shrink-0"
+      style={{ background: tint, color: tone, borderRadius: "2px" }}
     >
-      {lab.type === "hospital" ? (
-        <Building2 size={15} className={lab.isActive ? "text-rose-500" : "text-slate-400"} />
-      ) : (
-        <FlaskConical size={15} className={lab.isActive ? "text-indigo-500" : "text-slate-400"} />
-      )}
+      <Icon size={16} />
+    </div>
+    <div>
+      <p className="text-lg font-bold font-mono leading-none" style={{ color: INK }}>
+        {value}
+      </p>
+      <p className="text-[10.5px] mt-1" style={{ color: INK_MUTE }}>
+        {label}
+      </p>
+    </div>
+  </div>
+);
+
+/* ─── Lab card — modern, clean ────────────────────────────── */
+
+const LabCard = ({ lab, onView, onManageStaff, onEditSection }) => (
+  <div
+    className="group flex flex-col rounded-xl bg-white transition-all duration-150"
+    style={{
+      border: `1px solid ${LINE}`,
+      opacity: lab.isActive ? 1 : 0.65,
+      boxShadow: "0 1px 2px rgba(28,35,33,0.04)",
+    }}
+    onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 6px 20px rgba(28,35,33,0.08)")}
+    onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "0 1px 2px rgba(28,35,33,0.04)")}
+  >
+    {/* Header */}
+    <div className="flex items-start gap-3 px-4 pt-4 pb-3">
+      <div
+        className="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center"
+        style={{ background: lab.type === "hospital" ? RUST_TINT : TEAL_TINT }}
+      >
+        {lab.type === "hospital" ? (
+          <Building2 size={17} style={{ color: RUST }} />
+        ) : (
+          <FlaskConical size={17} style={{ color: TEAL }} />
+        )}
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <p className="text-[13.5px] font-bold leading-snug truncate" style={{ color: INK }}>
+          {lab.name}
+        </p>
+        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+          <span className="font-mono text-[10.5px]" style={{ color: INK_MUTE }}>
+            #{lab.labKey}
+          </span>
+          <span style={{ color: "#D8D3C6" }}>·</span>
+          <TypeFlag type={lab.type} compact />
+        </div>
+      </div>
+
+      <StatusStamp active={lab.isActive} />
     </div>
 
-    <div className="flex-1 min-w-0">
-      <div className="flex items-center gap-2 mb-1">
-        <p className="text-[13.5px] font-semibold text-slate-800 leading-snug">{lab.name}</p>
-        <LabTypeBadge type={lab.type} />
-        <StatusBadge active={lab.isActive} />
-      </div>
-      <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-        <span className="flex items-center gap-1 text-[11px] text-slate-400 font-mono">
-          <Hash size={10} className="text-slate-300" />
-          {lab.labKey}
-        </span>
-        {lab.registrationNumber && (
-          <span className="flex items-center gap-1 text-[11px] text-slate-400 font-mono">
-            <Lock size={10} className="text-slate-300" />
-            {lab.registrationNumber}
-          </span>
-        )}
+    {/* Meta strip */}
+    {(lab.contact?.primary || lab.registrationNumber) && (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pb-3 -mt-1">
         {lab.contact?.primary && (
-          <span className="flex items-center gap-1 text-[11px] text-slate-400">
-            <Phone size={10} className="text-slate-300" />
-            {lab.contact.primary}
+          <span className="flex items-center gap-1 text-[11px]" style={{ color: INK_MUTE }}>
+            <Phone size={10} /> {lab.contact.primary}
+          </span>
+        )}
+        {lab.registrationNumber && (
+          <span className="flex items-center gap-1 font-mono text-[11px]" style={{ color: INK_MUTE }}>
+            <Lock size={10} /> {lab.registrationNumber}
+          </span>
+        )}
+        {lab.billing?.forceInvoiceFee && (
+          <span className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: AMBER }}>
+            <Zap size={10} /> Forced fee
           </span>
         )}
       </div>
-    </div>
+    )}
 
-    {/* Billing chips — desktop only */}
-    <div className="hidden lg:flex items-center gap-2 shrink-0">
+    {/* Billing stats */}
+    <div className="grid grid-cols-3 gap-2 px-4 pb-4">
       {[
-        [`৳${lab.billing?.perInvoiceFee ?? 0}`, "Invoice"],
+        [`৳${lab.billing?.feePerInvoice ?? 0}`, "Invoice"],
         [`৳${lab.billing?.monthlyFee ?? 0}`, "Monthly"],
-        [`৳${lab.billing?.commission ?? 0}`, "Commission"],
+        [`৳${lab.billing?.commission ?? 0}`, "Comm."],
       ].map(([v, l]) => (
-        <div
-          key={l}
-          className="flex flex-col items-center px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-100 min-w-[68px]"
-        >
-          <span className="text-[11px] font-semibold text-indigo-500">{v}</span>
-          <span className="text-[9px] text-slate-400 uppercase tracking-wide mt-0.5">{l}</span>
+        <div key={l} className="rounded-lg py-2 text-center" style={{ background: GROUND }}>
+          <p className="text-[12px] font-bold font-mono leading-none" style={{ color: TEAL_DARK }}>
+            {v}
+          </p>
+          <p className="text-[9px] uppercase tracking-wide mt-1" style={{ color: INK_MUTE }}>
+            {l}
+          </p>
         </div>
       ))}
     </div>
 
-    {/* Action buttons — always visible */}
-    <div className="flex items-center gap-1 shrink-0">
-      <button
-        onClick={() => onView(lab)}
-        className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition border border-slate-200 hover:border-sky-200"
-        title="View lab"
-      >
-        <Info size={12} />
-      </button>
-      <button
-        onClick={() => onEdit(lab)}
-        className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition border border-slate-200 hover:border-indigo-200"
-        title="Edit lab"
-      >
-        <Pencil size={12} />
-      </button>
-      <button
-        onClick={() => onManageStaff(lab)}
-        className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition border border-slate-200 hover:border-violet-200"
-        title="Manage staff"
-      >
-        <Users size={12} />
-      </button>
+    {/* Divider */}
+    <div style={{ borderTop: `1px solid ${LINE}` }} />
+
+    {/* Actions */}
+    <div className="flex items-center justify-between gap-2 px-3 py-2.5">
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onEditSection(lab, "details")}
+          title="Edit lab details"
+          className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[10.5px] font-semibold cursor-pointer transition-colors"
+          style={{ color: TEAL_DARK }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = TEAL_TINT)}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+        >
+          <Pencil size={11} /> Details
+        </button>
+        <button
+          type="button"
+          onClick={() => onEditSection(lab, "contact")}
+          title="Edit contact"
+          className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[10.5px] font-semibold cursor-pointer transition-colors"
+          style={{ color: VIOLET }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = VIOLET_TINT)}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+        >
+          <Pencil size={11} /> Contact
+        </button>
+        <button
+          type="button"
+          onClick={() => onEditSection(lab, "billing")}
+          title="Edit billing"
+          className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[10.5px] font-semibold cursor-pointer transition-colors"
+          style={{ color: AMBER }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = AMBER_TINT)}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+        >
+          <Pencil size={11} /> Billing
+        </button>
+      </div>
+
+      <div className="flex items-center gap-1 shrink-0">
+        <IconBtn icon={Info} tone={VIOLET} tint={VIOLET_TINT} title="View lab" onClick={() => onView(lab)} />
+        <IconBtn icon={Users} tone={AMBER} tint={AMBER_TINT} title="View staff" onClick={() => onManageStaff(lab)} />
+      </div>
     </div>
   </div>
 );
 
-/* ─── Skeleton ───────────────────────────────────────────── */
-
-const SkeletonRow = () => (
-  <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-100 bg-white animate-pulse">
-    <div className="w-9 h-9 bg-slate-100 rounded-xl shrink-0" />
-    <div className="flex-1 space-y-2">
-      <div className="h-3 bg-slate-100 rounded w-2/5" />
-      <div className="h-2.5 bg-slate-50 rounded w-3/5" />
+const SkeletonCard = () => (
+  <div className="flex flex-col rounded-xl bg-white animate-pulse" style={{ border: `1px solid ${LINE}` }}>
+    <div className="flex items-start gap-3 px-4 pt-4 pb-3">
+      <div className="w-10 h-10 rounded-lg shrink-0" style={{ background: "#EEEBE1" }} />
+      <div className="flex-1 space-y-2 pt-1">
+        <div className="h-3 w-3/5 rounded" style={{ background: "#EEEBE1" }} />
+        <div className="h-2.5 w-2/5 rounded" style={{ background: "#F2F0E8" }} />
+      </div>
     </div>
-    <div className="hidden lg:flex gap-2">
+    <div className="grid grid-cols-3 gap-2 px-4 pb-4">
       {[1, 2, 3].map((i) => (
-        <div key={i} className="w-[68px] h-9 bg-slate-50 rounded-lg" />
+        <div key={i} className="h-11 rounded-lg" style={{ background: GROUND }} />
       ))}
     </div>
-    <div className="flex gap-1">
-      {[1, 2, 3].map((i) => (
-        <div key={i} className="w-7 h-7 bg-slate-100 rounded-lg" />
-      ))}
+    <div style={{ borderTop: `1px solid ${LINE}` }} />
+    <div className="flex items-center justify-between px-3 py-2.5">
+      <div className="h-6 w-28 rounded" style={{ background: "#F2F0E8" }} />
+      <div className="flex gap-1">
+        <div className="w-7 h-7 rounded" style={{ background: "#EEEBE1" }} />
+        <div className="w-7 h-7 rounded" style={{ background: "#EEEBE1" }} />
+      </div>
     </div>
   </div>
 );
 
-/* ─── Pagination ─────────────────────────────────────────── */
+/* ─── Pagination ──────────────────────────────────────────── */
 
 const Pagination = ({ page, totalPages, total, onPageChange }) => {
   if (totalPages <= 1) return null;
   const from = (page - 1) * LIMIT + 1;
   const to = Math.min(page * LIMIT, total);
   return (
-    <div className="flex items-center justify-between mt-5 pt-4 border-t border-slate-100">
-      <p className="text-xs text-slate-400">
+    <div className="flex items-center justify-between mt-5 pt-4 border-t" style={{ borderColor: LINE }}>
+      <p className="text-[11.5px]" style={{ color: INK_MUTE }}>
         Showing{" "}
-        <strong className="text-slate-600">
+        <strong style={{ color: INK }}>
           {from}–{to}
         </strong>{" "}
-        of <strong className="text-slate-600">{total}</strong> labs
+        of <strong style={{ color: INK }}>{total}</strong> labs
       </p>
       <div className="flex gap-1">
         <button
           onClick={() => onPageChange(page - 1)}
           disabled={page === 1}
-          className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
+          className="w-8 h-8 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          style={{ border: `1px solid ${LINE}`, background: "white", color: INK_MUTE, borderRadius: "2px" }}
         >
           <ChevronLeft size={14} />
         </button>
@@ -1316,11 +1449,12 @@ const Pagination = ({ page, totalPages, total, onPageChange }) => {
           <button
             key={p}
             onClick={() => onPageChange(p)}
-            className={`w-8 h-8 rounded-lg text-xs font-semibold transition ${
+            className="w-8 h-8 text-[11.5px] font-bold font-mono transition-colors"
+            style={
               p === page
-                ? "bg-indigo-500 text-white border-none"
-                : "border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
-            }`}
+                ? { background: TEAL, color: "white", border: "none", borderRadius: "2px" }
+                : { border: `1px solid ${LINE}`, background: "white", color: INK_MUTE, borderRadius: "2px" }
+            }
           >
             {p}
           </button>
@@ -1328,7 +1462,8 @@ const Pagination = ({ page, totalPages, total, onPageChange }) => {
         <button
           onClick={() => onPageChange(page + 1)}
           disabled={page === totalPages}
-          className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
+          className="w-8 h-8 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          style={{ border: `1px solid ${LINE}`, background: "white", color: INK_MUTE, borderRadius: "2px" }}
         >
           <ChevronRight size={14} />
         </button>
@@ -1349,8 +1484,9 @@ const Labs = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
-  const [labModal, setLabModal] = useState({ open: false, edit: null });
+  const [createModalOpen, setCreateModalOpen] = useState(false);
   const [viewLab, setViewLab] = useState(null);
+  const [editTarget, setEditTarget] = useState(null); // { lab, section: "details"|"contact"|"billing" }
   const [staffDrawer, setStaffDrawer] = useState(null);
   const [popup, setPopup] = useState({ open: false, type: "success", message: "", onConfirm: null });
   const debounceRef = useRef(null);
@@ -1364,6 +1500,7 @@ const Labs = () => {
       const r = await labService.getStats();
       setStats(r.data);
     } catch {
+      // stats are supplementary — the list still loads without them
     } finally {
       setStatsLoading(false);
     }
@@ -1418,9 +1555,10 @@ const Labs = () => {
         contact: form.contact,
         isActive: form.isActive,
         billing: {
-          perInvoiceFee: Number(form.billing.perInvoiceFee),
-          monthlyFee: Number(form.billing.monthlyFee),
-          commission: Number(form.billing.commission),
+          feePerInvoice: Number(form.billing.feePerInvoice) || 0,
+          forceInvoiceFee: !!form.billing.forceInvoiceFee,
+          monthlyFee: Number(form.billing.monthlyFee) || 0,
+          commission: Number(form.billing.commission) || 0,
         },
       });
       showPopup("success", "Lab registered successfully!");
@@ -1432,166 +1570,211 @@ const Labs = () => {
     }
   };
 
-  const handleEdit = async (form) => {
-    const id = labModal.edit._id;
+  // Refetch a single lab (e.g. after a section edit) and keep the view sheet,
+  // edit target, list, and stats all in sync with the latest data.
+  const refreshLab = async (labId) => {
     try {
-      await labService.updateLabInfo(id, {
-        name: form.name,
-        type: form.type || undefined,
-        registrationNumber: form.registrationNumber || undefined,
-        contact: form.contact,
-      });
-      await labService.updateLabBilling(id, {
-        perInvoiceFee: Number(form.billing.perInvoiceFee),
-        monthlyFee: Number(form.billing.monthlyFee),
-        commission: Number(form.billing.commission),
-      });
-      if (form.isActive !== labModal.edit.isActive) {
-        if (form.isActive) {
-          await labService.activateLab(id);
-        } else {
-          await labService.deactivateLab(id);
-        }
-      }
-      showPopup("success", "Lab updated successfully!");
-      fetchStats();
-      fetchLabs(page, search);
+      const r = await labService.getLabById(labId);
+      setViewLab((v) => (v && v._id === labId ? r.data : v));
+      setEditTarget((t) => (t && t.lab._id === labId ? { ...t, lab: r.data } : t));
+    } catch {
+      // if the single-lab fetch fails, the list refresh below still runs
+    }
+    fetchStats();
+    fetchLabs(page, search);
+  };
+
+  const handleToggleActive = async (lab) => {
+    try {
+      if (lab.isActive) await labService.deactivateLab(lab._id);
+      else await labService.activateLab(lab._id);
+      showPopup("success", lab.isActive ? "Lab deactivated." : "Lab activated.");
+      refreshLab(lab._id);
     } catch (err) {
-      showPopup("error", err?.response?.data?.message || "Failed to update lab.");
-      throw err;
+      showPopup("error", err?.response?.data?.message || "Failed to update status.");
     }
   };
 
   const isSearchMode = search.trim().length > 0;
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-6 lg:py-8 max-w-5xl mx-auto">
-      {/* Page header */}
-      <div className="flex items-center justify-between gap-3 mb-6">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-500 flex items-center justify-center shrink-0">
-            <FlaskConical size={18} className="text-white" />
+    <div className="min-h-full px-4 sm:px-6 lg:px-8 py-6 lg:py-8" style={dotGround}>
+      <div className="max-w-6xl mx-auto">
+        {/* Page header */}
+        <div className="flex items-center justify-between gap-3 mb-6">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-10 h-10 flex items-center justify-center shrink-0"
+              style={{ background: TEAL, borderRadius: "2px" }}
+            >
+              <FlaskConical size={18} className="text-white" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold tracking-tight leading-none" style={{ color: INK }}>
+                Laboratories
+              </h1>
+              <p className="text-[10.5px] mt-1" style={{ color: INK_MUTE }}>
+                Registered labs and network overview
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-bold text-slate-800 tracking-tight leading-none">Laboratories</h1>
-            <p className="text-[11px] text-slate-400 mt-1">Registered labs and network overview</p>
-          </div>
+          <SolidBtn onClick={() => setCreateModalOpen(true)}>
+            <Plus size={14} /> Register Lab
+          </SolidBtn>
         </div>
-        <button
-          onClick={() => setLabModal({ open: true, edit: null })}
-          className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-white bg-indigo-500 rounded-xl hover:bg-indigo-600 transition-all whitespace-nowrap"
-        >
-          <Plus size={14} /> Register Lab
-        </button>
-      </div>
 
-      {/* Stats — 3 cards, no monthly revenue */}
-      <div className="grid grid-cols-3 gap-3 mb-5">
-        <StatCard icon={Layers} label="Total labs" value={statsLoading ? "—" : (stats?.total ?? 0)} color="indigo" />
-        <StatCard icon={Activity} label="Active" value={statsLoading ? "—" : (stats?.active ?? 0)} color="green" />
-        <StatCard
-          icon={TrendingUp}
-          label="Inactive"
-          value={statsLoading ? "—" : (stats?.inactive ?? 0)}
-          color="slate"
-        />
-      </div>
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-3 mb-5">
+          <StatCard
+            icon={Layers}
+            label="Total labs"
+            value={statsLoading ? "—" : (stats?.total ?? 0)}
+            tone={TEAL}
+            tint={TEAL_TINT}
+          />
+          <StatCard
+            icon={Activity}
+            label="Active"
+            value={statsLoading ? "—" : (stats?.active ?? 0)}
+            tone={VIOLET}
+            tint={VIOLET_TINT}
+          />
+          <StatCard
+            icon={PowerOff}
+            label="Inactive"
+            value={statsLoading ? "—" : (stats?.inactive ?? 0)}
+            tone={AMBER}
+            tint={AMBER_TINT}
+          />
+        </div>
 
-      {/* Search bar */}
-      <div className="flex items-center gap-2.5 mb-4">
-        <div className="relative flex-1">
-          <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-            {searchLoading ? (
-              <RefreshCw size={14} className="text-indigo-500 animate-spin" />
-            ) : (
-              <Search size={14} className="text-slate-400" />
+        {/* Search bar */}
+        <div className="flex items-center gap-2.5 mb-4">
+          <div className="relative flex-1">
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+              {searchLoading ? (
+                <RefreshCw size={14} className="animate-spin" style={{ color: TEAL }} />
+              ) : (
+                <Search size={14} style={{ color: "#B8B2A2" }} />
+              )}
+            </div>
+            <input
+              type="text"
+              placeholder="Search by Lab ID…"
+              value={search}
+              onChange={(e) => handleSearch(e.target.value)}
+              className="w-full pl-9 pr-9 py-2.5 text-[13px] bg-white outline-none transition-colors placeholder:text-[#B8B2A2]"
+              style={{ border: `1px solid ${LINE}`, borderRadius: "2px", color: INK }}
+              onFocus={(e) => (e.target.style.borderColor = TEAL)}
+              onBlur={(e) => (e.target.style.borderColor = LINE)}
+            />
+            {search && (
+              <button
+                onClick={handleClearSearch}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center border-none cursor-pointer"
+                style={{ background: "#EEEBE1", color: INK_MUTE, borderRadius: "2px" }}
+              >
+                <X size={11} />
+              </button>
             )}
           </div>
-          <input
-            type="text"
-            placeholder="Search by Lab ID…"
-            value={search}
-            onChange={(e) => handleSearch(e.target.value)}
-            className="w-full pl-9 pr-9 py-2.5 text-[13px] rounded-xl border border-slate-200 bg-white text-slate-800 placeholder-slate-300 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/10 transition-all"
-          />
-          {search && (
-            <button
-              onClick={handleClearSearch}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-md bg-slate-100 text-slate-400 hover:text-slate-600 transition border-none cursor-pointer"
+
+          {isSearchMode && !searchLoading && (
+            <div
+              className="flex items-center gap-1.5 px-3 py-2 text-[11px] shrink-0"
+              style={{ background: GROUND, border: `1px solid ${LINE}`, borderRadius: "2px", color: INK_MUTE }}
             >
-              <X size={11} />
-            </button>
+              {total === 0 ? "No results for" : `${total} result${total !== 1 ? "s" : ""} for`}
+              <strong style={{ color: INK }}>"{search}"</strong>
+              <button
+                onClick={handleClearSearch}
+                className="border-none cursor-pointer bg-transparent flex"
+                style={{ color: INK_MUTE }}
+              >
+                <X size={12} />
+              </button>
+            </div>
           )}
         </div>
 
-        {isSearchMode && !searchLoading && (
-          <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[11.5px] text-slate-500 shrink-0">
-            {total === 0 ? "No results for" : `${total} result${total !== 1 ? "s" : ""} for`}
-            <strong className="text-slate-700">"{search}"</strong>
-            <button
-              onClick={handleClearSearch}
-              className="text-slate-400 hover:text-slate-600 transition bg-transparent border-none cursor-pointer flex"
+        {/* Lab list */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {loading ? (
+            Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
+          ) : labs.length === 0 ? (
+            <div
+              className="col-span-full flex flex-col items-center justify-center py-16 text-center rounded-xl"
+              style={{ background: PAPER, border: `2px dashed ${LINE}` }}
             >
-              <X size={12} />
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Lab list */}
-      <div className="flex flex-col gap-1.5">
-        {loading ? (
-          Array.from({ length: 7 }).map((_, i) => <SkeletonRow key={i} />)
-        ) : labs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center bg-white rounded-2xl border border-dashed border-slate-200">
-            <div className="w-12 h-12 rounded-2xl bg-slate-50 border-2 border-dashed border-slate-200 flex items-center justify-center mb-3">
-              <FlaskConical size={20} className="text-slate-300" />
+              <div
+                className="w-12 h-12 flex items-center justify-center mb-3 rounded-lg"
+                style={{ border: `2px dashed ${LINE}` }}
+              >
+                <FlaskConical size={20} style={{ color: "#C7C1B2" }} />
+              </div>
+              <p className="text-[13px] font-bold mb-1" style={{ color: INK_MUTE }}>
+                {isSearchMode ? `No labs match "${search}"` : "No labs registered yet"}
+              </p>
+              <p className="text-[11px] mb-5 max-w-[260px]" style={{ color: INK_MUTE }}>
+                {isSearchMode
+                  ? "Try a different Lab ID or clear the search."
+                  : "Register your first lab to get started."}
+              </p>
+              {isSearchMode ? (
+                <GhostBtn onClick={handleClearSearch}>
+                  <X size={13} className="inline mr-1" /> Clear Search
+                </GhostBtn>
+              ) : (
+                <SolidBtn onClick={() => setCreateModalOpen(true)}>
+                  <Plus size={14} /> Register First Lab
+                </SolidBtn>
+              )}
             </div>
-            <p className="text-sm font-bold text-slate-500 mb-1">
-              {isSearchMode ? `No labs match "${search}"` : "No labs registered yet"}
-            </p>
-            <p className="text-xs text-slate-400 mb-5 max-w-[260px]">
-              {isSearchMode ? "Try a different Lab ID or clear the search." : "Register your first lab to get started."}
-            </p>
-            {isSearchMode ? (
-              <button
-                onClick={handleClearSearch}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-500 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition"
-              >
-                <X size={13} /> Clear Search
-              </button>
-            ) : (
-              <button
-                onClick={() => setLabModal({ open: true, edit: null })}
-                className="flex items-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-indigo-500 rounded-xl hover:bg-indigo-600 transition-all"
-              >
-                <Plus size={14} /> Register First Lab
-              </button>
-            )}
-          </div>
-        ) : (
-          labs.map((lab, i) => (
-            <LabRow
-              key={lab._id}
-              lab={lab}
-              index={i}
-              onView={(l) => setViewLab(l)}
-              onEdit={(l) => setLabModal({ open: true, edit: l })}
-              onManageStaff={(l) => setStaffDrawer(l)}
-            />
-          ))
-        )}
+          ) : (
+            labs.map((lab) => (
+              <LabCard
+                key={lab._id}
+                lab={lab}
+                onView={(l) => setViewLab(l)}
+                onManageStaff={(l) => setStaffDrawer(l)}
+                onEditSection={(l, section) => setEditTarget({ lab: l, section })}
+              />
+            ))
+          )}
+        </div>
+
+        <Pagination page={page} totalPages={totalPages} total={total} onPageChange={handlePageChange} />
       </div>
 
-      <Pagination page={page} totalPages={totalPages} total={total} onPageChange={handlePageChange} />
+      <LabViewSheet
+        isOpen={!!viewLab}
+        onClose={() => setViewLab(null)}
+        lab={viewLab}
+        onToggleActive={handleToggleActive}
+      />
 
-      <LabViewModal isOpen={!!viewLab} onClose={() => setViewLab(null)} lab={viewLab} />
+      <LabCreateModal isOpen={createModalOpen} onClose={() => setCreateModalOpen(false)} onSubmit={handleCreate} />
 
-      <LabModal
-        isOpen={labModal.open}
-        onClose={() => setLabModal({ open: false, edit: null })}
-        onSubmit={labModal.edit ? handleEdit : handleCreate}
-        editLab={labModal.edit}
+      <LabDetailsModal
+        isOpen={editTarget?.section === "details"}
+        onClose={() => setEditTarget(null)}
+        lab={editTarget?.lab}
+        onSaved={() => refreshLab(editTarget.lab._id)}
+        showPopup={showPopup}
+      />
+      <LabContactModal
+        isOpen={editTarget?.section === "contact"}
+        onClose={() => setEditTarget(null)}
+        lab={editTarget?.lab}
+        onSaved={() => refreshLab(editTarget.lab._id)}
+        showPopup={showPopup}
+      />
+      <LabBillingModal
+        isOpen={editTarget?.section === "billing"}
+        onClose={() => setEditTarget(null)}
+        lab={editTarget?.lab}
+        onSaved={() => refreshLab(editTarget.lab._id)}
+        showPopup={showPopup}
       />
 
       {staffDrawer && <StaffDrawer lab={staffDrawer} onClose={() => setStaffDrawer(null)} showPopup={showPopup} />}

@@ -1,8 +1,20 @@
-import { NavLink } from "react-router-dom";
+import { useState } from "react";
+import { NavLink, useNavigate } from "react-router-dom";
 import { LogOut, Zap } from "lucide-react";
 import menu from "./menu";
+import { useAuthStore } from "../../store/authStore";
+import Popup from "../popup"; // adjust path to match your project structure
 
 const DesktopMenu = () => {
+  const navigate = useNavigate();
+  const logout = useAuthStore((s) => s.logout);
+  const [showLogoutPopup, setShowLogoutPopup] = useState(false);
+
+  const handleConfirmLogout = async () => {
+    await logout();
+    navigate("/login", { replace: true });
+  };
+
   return (
     <nav className="hidden lg:flex w-60 fixed left-0 top-0 h-screen flex-col z-40 bg-white border-r border-slate-100 shadow-[4px_0_24px_rgba(15,23,42,0.04)]">
       {/* Top indigo stripe */}
@@ -39,12 +51,10 @@ const DesktopMenu = () => {
                         : "border border-transparent hover:bg-slate-50 hover:border-slate-200"
                     }`}
                   >
-                    {/* Active left bar */}
                     {isActive && (
                       <div className="absolute left-0 top-[22%] bottom-[22%] w-[3px] bg-gradient-to-b from-indigo-500 to-indigo-400 rounded-r-full" />
                     )}
 
-                    {/* Icon box */}
                     <div
                       className={`w-8 h-8 rounded-[9px] shrink-0 flex items-center justify-center border transition-colors duration-150
                       ${
@@ -59,7 +69,6 @@ const DesktopMenu = () => {
                       />
                     </div>
 
-                    {/* Label */}
                     <span
                       className={`flex-1 text-[13px] tracking-[-0.2px] transition-colors duration-150
                       ${isActive ? "font-bold text-indigo-900" : "font-medium text-slate-500 group-hover:text-slate-800"}`}
@@ -67,7 +76,6 @@ const DesktopMenu = () => {
                       {item.label}
                     </span>
 
-                    {/* Active dot */}
                     {isActive && (
                       <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0 shadow-[0_0_0_3px_rgba(99,102,241,0.15)]" />
                     )}
@@ -81,7 +89,10 @@ const DesktopMenu = () => {
 
       {/* Sign out */}
       <div className="shrink-0 border-t border-slate-50 px-2.5 pt-2 pb-3.5">
-        <button className="group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-transparent hover:bg-red-50 hover:border-red-100 transition-all duration-150 cursor-pointer bg-transparent">
+        <button
+          onClick={() => setShowLogoutPopup(true)}
+          className="group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-transparent hover:bg-red-50 hover:border-red-100 transition-all duration-150 cursor-pointer bg-transparent"
+        >
           <div className="w-8 h-8 rounded-[9px] bg-red-50 border border-red-100 flex items-center justify-center shrink-0">
             <LogOut size={13} className="text-red-400" />
           </div>
@@ -90,6 +101,17 @@ const DesktopMenu = () => {
           </span>
         </button>
       </div>
+
+      {showLogoutPopup && (
+        <Popup
+          type="logout"
+          message="Are you sure you want to log out?"
+          confirmText="Log Out"
+          cancelText="Cancel"
+          onConfirm={handleConfirmLogout}
+          onClose={() => setShowLogoutPopup(false)}
+        />
+      )}
     </nav>
   );
 };

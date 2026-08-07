@@ -1,8 +1,8 @@
 import React from "react";
-import { CheckCircle2, XCircle, AlertTriangle, X } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, LogOut, X } from "lucide-react";
 import Portal from "../Portal";
 
-// Only three types: success, error, warning
+// Only four types: success, error, warning, logout
 const typeConfig = {
   success: {
     icon: CheckCircle2,
@@ -29,6 +29,16 @@ const typeConfig = {
     iconBgColor: "bg-gradient-to-br from-yellow-100 to-amber-100",
     iconColor: "text-yellow-600",
     confirmButtonColor: "bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-700 hover:to-amber-700",
+    cancelButtonColor: "bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700",
+    singleButton: false,
+  },
+  logout: {
+    icon: LogOut,
+    title: "Log out?",
+    titleColor: "text-red-600",
+    iconBgColor: "bg-gradient-to-br from-red-100 to-rose-100",
+    iconColor: "text-red-600",
+    confirmButtonColor: "bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700",
     cancelButtonColor: "bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700",
     singleButton: false,
   },

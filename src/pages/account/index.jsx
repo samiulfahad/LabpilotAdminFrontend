@@ -5,8 +5,6 @@ import {
   User,
   Phone,
   KeyRound,
-  Eye,
-  EyeOff,
   Shield,
   Monitor,
   Smartphone,
@@ -16,27 +14,17 @@ import {
   LogOut,
   AlertCircle,
   Loader2,
-  Check,
+  X,
+  ChevronRight,
 } from "lucide-react";
 import accountService from "../../api/account";
 import { useAuthStore } from "../../store/authStore";
 import Popup from "../../components/popup";
+import Modal from "../../components/modal";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
 const getErrorMessage = (err, fallback) => err?.response?.data?.error ?? fallback;
-
-const fmtDateTime = (d) =>
-  d
-    ? new Date(d).toLocaleString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-      })
-    : "—";
 
 const timeAgo = (d) => {
   if (!d) return "Never";
@@ -61,7 +49,7 @@ const inputCls =
 
 // ─── Password Field ─────────────────────────────────────────────────────
 
-const PasswordField = ({ label, value, onChange, disabled }) => {
+const PasswordField = ({ label, value, onChange, disabled, autoFocus }) => {
   const [show, setShow] = useState(false);
   return (
     <div>
@@ -72,6 +60,7 @@ const PasswordField = ({ label, value, onChange, disabled }) => {
           value={value}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
+          autoFocus={autoFocus}
           className={`${inputCls} pr-16`}
         />
         <button
@@ -86,14 +75,23 @@ const PasswordField = ({ label, value, onChange, disabled }) => {
   );
 };
 
-// ─── Change Password Card ───────────────────────────────────────────────
+// ─── Change Password Modal ───────────────────────────────────────────────
 
-const ChangePasswordCard = ({ onSuccess }) => {
+const ChangePasswordModal = ({ isOpen, onClose, onSuccess }) => {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (isOpen) {
+      setCurrent("");
+      setNext("");
+      setConfirm("");
+      setError("");
+    }
+  }, [isOpen]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -105,9 +103,7 @@ const ChangePasswordCard = ({ onSuccess }) => {
     try {
       setLoading(true);
       await accountService.changePassword({ currentPassword: current, newPassword: next });
-      setCurrent("");
-      setNext("");
-      setConfirm("");
+      onClose();
       onSuccess("Password changed successfully");
     } catch (err) {
       setError(getErrorMessage(err, "Failed to change password"));
@@ -117,30 +113,58 @@ const ChangePasswordCard = ({ onSuccess }) => {
   };
 
   return (
-    <div className="bg-[#FAF9F5] rounded-[2px] border border-black/10 p-6">
-      <div className="flex items-center gap-2 mb-4">
-        <KeyRound size={16} className="text-[#0F6E5C]" />
-        <h2 className="text-sm font-semibold">Change Password</h2>
-      </div>
-      <form onSubmit={handleSubmit} className="space-y-3 max-w-sm">
-        <PasswordField label="Current Password" value={current} onChange={setCurrent} disabled={loading} />
-        <PasswordField label="New Password" value={next} onChange={setNext} disabled={loading} />
-        <PasswordField label="Confirm New Password" value={confirm} onChange={setConfirm} disabled={loading} />
-        {error && (
-          <p className="flex items-center gap-1.5 text-sm text-red-600">
-            <AlertCircle size={14} /> {error}
-          </p>
-        )}
-        <button
-          type="submit"
-          disabled={loading}
-          className="flex items-center justify-center gap-2 rounded-[2px] bg-[#0F6E5C] text-white text-sm font-medium py-2 px-4 disabled:opacity-50"
-        >
-          {loading && <Loader2 size={14} className="animate-spin" />}
-          {loading ? "Changing…" : "Change Password"}
-        </button>
+    <Modal isOpen={isOpen} onClose={onClose} size="sm">
+      <form onSubmit={handleSubmit}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-black/10">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-[2px] bg-[#0F6E5C] flex items-center justify-center shrink-0">
+              <KeyRound size={16} className="text-white" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold leading-none">Change Password</p>
+              <p className="text-xs text-black/40 mt-1">Update your account password</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-[2px] text-black/40 hover:bg-black/5 hover:text-black transition"
+          >
+            <X size={15} />
+          </button>
+        </div>
+
+        <div className="px-5 py-5 space-y-3">
+          <PasswordField label="Current Password" value={current} onChange={setCurrent} disabled={loading} autoFocus />
+          <PasswordField label="New Password" value={next} onChange={setNext} disabled={loading} />
+          <PasswordField label="Confirm New Password" value={confirm} onChange={setConfirm} disabled={loading} />
+          {error && (
+            <p className="flex items-center gap-1.5 text-sm text-red-600">
+              <AlertCircle size={14} /> {error}
+            </p>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-black/10 bg-black/[0.02]">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="px-4 py-2 text-sm font-medium text-black/60 rounded-[2px] border border-black/15 hover:bg-black/5 transition disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={loading}
+            className="flex items-center justify-center gap-2 rounded-[2px] bg-[#0F6E5C] text-white text-sm font-medium py-2 px-4 hover:bg-[#0c5a4b] transition disabled:opacity-50"
+          >
+            {loading && <Loader2 size={14} className="animate-spin" />}
+            {loading ? "Changing…" : "Change Password"}
+          </button>
+        </div>
       </form>
-    </div>
+    </Modal>
   );
 };
 
@@ -200,6 +224,7 @@ function Account() {
   const [revokingId, setRevokingId] = useState(null);
   const [popup, setPopup] = useState(null);
   const [showLogoutPopup, setShowLogoutPopup] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   useEffect(() => {
     fetchSessions();
@@ -235,6 +260,8 @@ function Account() {
     navigate("/login", { replace: true });
   };
 
+  const otherSessionCount = sessions.filter((s) => !s.isCurrent).length;
+
   return (
     <div className="min-h-screen bg-[#F5F4EF] px-4 py-8">
       {popup && <Popup type={popup.type} message={popup.message} onClose={() => setPopup(null)} />}
@@ -248,6 +275,11 @@ function Account() {
           onClose={() => setShowLogoutPopup(false)}
         />
       )}
+      <ChangePasswordModal
+        isOpen={showPasswordModal}
+        onClose={() => setShowPasswordModal(false)}
+        onSuccess={(message) => setPopup({ type: "success", message })}
+      />
 
       <div className="max-w-2xl mx-auto">
         {/* Header */}
@@ -279,45 +311,79 @@ function Account() {
           </div>
         </div>
 
-        {/* Change password */}
-        <div className="mb-4">
-          <ChangePasswordCard onSuccess={(message) => setPopup({ type: "success", message })} />
-        </div>
+        {/* Security card — password + sessions consolidated */}
+        <div className="bg-[#FAF9F5] rounded-[2px] border border-black/10 overflow-hidden">
+          <div className="flex items-center gap-2 px-6 pt-6 pb-4">
+            <Shield size={16} className="text-[#0F6E5C]" />
+            <h2 className="text-sm font-semibold">Security</h2>
+          </div>
 
-        {/* Active sessions */}
-        <div className="bg-[#FAF9F5] rounded-[2px] border border-black/10 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Shield size={16} className="text-[#0F6E5C]" />
-              <h2 className="text-sm font-semibold">Active Sessions</h2>
+          {/* Password row */}
+          <button
+            onClick={() => setShowPasswordModal(true)}
+            className="w-full flex items-center justify-between gap-3 px-6 py-4 border-t border-black/10 hover:bg-black/[0.02] transition text-left"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-9 h-9 rounded-[2px] bg-black/5 flex items-center justify-center shrink-0">
+                <KeyRound size={15} className="text-black/50" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Password</p>
+                <p className="text-xs text-black/40 mt-0.5">••••••••••</p>
+              </div>
+            </div>
+            <span className="flex items-center gap-1 text-xs font-medium text-[#0F6E5C] shrink-0">
+              Change
+              <ChevronRight size={13} />
+            </span>
+          </button>
+
+          {/* Sessions header row */}
+          <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-black/10">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Active Sessions</p>
+              <p className="text-xs text-black/40 mt-0.5">
+                {loadingSess ? "Loading…" : `${sessions.length} device${sessions.length === 1 ? "" : "s"} signed in`}
+              </p>
             </div>
             <button
               onClick={() => setShowLogoutPopup(true)}
-              className="flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700"
+              className="shrink-0 flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700"
             >
               <LogOut size={12} /> Sign Out
             </button>
           </div>
 
-          {loadingSess ? (
-            <div className="space-y-2">
-              {[1, 2].map((i) => (
-                <div key={i} className="h-14 bg-black/5 rounded-[2px] animate-pulse" />
-              ))}
-            </div>
-          ) : sessError ? (
-            <p className="flex items-center gap-1.5 text-sm text-red-600">
-              <AlertCircle size={14} /> {sessError}
-            </p>
-          ) : sessions.length === 0 ? (
-            <p className="text-sm text-black/40">No active sessions found</p>
-          ) : (
-            <div className="space-y-2">
-              {sessions.map((s) => (
-                <SessionRow key={s.deviceId} session={s} onRevoke={handleRevoke} revoking={revokingId === s.deviceId} />
-              ))}
-            </div>
-          )}
+          {/* Sessions list */}
+          <div className="px-6 pb-6">
+            {loadingSess ? (
+              <div className="space-y-2">
+                {[1, 2].map((i) => (
+                  <div key={i} className="h-14 bg-black/5 rounded-[2px] animate-pulse" />
+                ))}
+              </div>
+            ) : sessError ? (
+              <p className="flex items-center gap-1.5 text-sm text-red-600">
+                <AlertCircle size={14} /> {sessError}
+              </p>
+            ) : sessions.length === 0 ? (
+              <p className="text-sm text-black/40">No active sessions found</p>
+            ) : (
+              <div className="space-y-2">
+                {sessions.map((s) => (
+                  <SessionRow
+                    key={s.deviceId}
+                    session={s}
+                    onRevoke={handleRevoke}
+                    revoking={revokingId === s.deviceId}
+                  />
+                ))}
+                {otherSessionCount === 0 && (
+                  <p className="text-xs text-black/30 pt-1">This is your only active session.</p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

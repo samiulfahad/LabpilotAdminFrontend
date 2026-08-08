@@ -8,12 +8,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Phone,
-  Mail,
-  MapPin,
   CreditCard,
   X,
   Building2,
-  Hash,
   Layers,
   RefreshCw,
   Activity,
@@ -22,6 +19,7 @@ import {
   ShieldCheck,
   UserCog,
   Headset,
+  Power,
   PowerOff,
   Info,
   Lock,
@@ -51,6 +49,8 @@ const AMBER = "#A9762C";
 const AMBER_TINT = "#F3E9D6";
 const VIOLET = "#5B4E8C";
 const VIOLET_TINT = "#EBE8F5";
+const BLUE = "#2B5F8A";
+const BLUE_TINT = "#E3EDF4";
 
 const dotGround = {
   backgroundColor: GROUND,
@@ -75,6 +75,15 @@ const EMPTY_LAB = {
     zoneId: "",
   },
   billing: { feePerInvoice: "", forceInvoiceFee: false, monthlyFee: "", commission: "" },
+  limit: {
+    maxStaff: "",
+    maxProduct: "",
+    maxService: "",
+    maxMedicine: "",
+    maxReferrer: "",
+    maxDoctor: "",
+    maxAdmissionSpace: "",
+  },
 };
 
 const LAB_TYPE_OPTIONS = [
@@ -636,6 +645,112 @@ const LabBillingModal = ({ isOpen, onClose, lab, onSaved, showPopup }) => {
   );
 };
 
+/* ─── Section 4: Limit modal ──────────────────────────────── */
+
+const LabLimitModal = ({ isOpen, onClose, lab, onSaved, showPopup }) => {
+  const [form, setForm] = useState(EMPTY_LAB.limit);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && lab) {
+      setForm({
+        maxStaff: lab.limit?.maxStaff ?? "",
+        maxProduct: lab.limit?.maxProduct ?? "",
+        maxService: lab.limit?.maxService ?? "",
+        maxMedicine: lab.limit?.maxMedicine ?? "",
+        maxReferrer: lab.limit?.maxReferrer ?? "",
+        maxDoctor: lab.limit?.maxDoctor ?? "",
+        maxAdmissionSpace: lab.limit?.maxAdmissionSpace ?? "",
+      });
+    }
+  }, [isOpen, lab]);
+
+  const setL = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const handleSave = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      await labService.updateLabLimit(lab._id, {
+        maxStaff: Number(form.maxStaff) || 0,
+        maxProduct: Number(form.maxProduct) || 0,
+        maxService: Number(form.maxService) || 0,
+        maxMedicine: Number(form.maxMedicine) || 0,
+        maxReferrer: Number(form.maxReferrer) || 0,
+        maxDoctor: Number(form.maxDoctor) || 0,
+        maxAdmissionSpace: Number(form.maxAdmissionSpace) || 0,
+      });
+      showPopup("success", "Lab limits updated.");
+      await onSaved();
+      onClose();
+    } catch (err) {
+      showPopup("error", err?.response?.data?.message || "Failed to update limits.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!lab) return null;
+
+  return (
+    <SectionModal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Edit Limits"
+      icon={Layers}
+      tone={BLUE}
+      onSave={handleSave}
+      loading={loading}
+    >
+      <div className="grid grid-cols-3 gap-3">
+        <MonoInput label="Max Staff" type="number" value={form.maxStaff} onChange={setL("maxStaff")} placeholder="0" />
+        <MonoInput
+          label="Max Doctor"
+          type="number"
+          value={form.maxDoctor}
+          onChange={setL("maxDoctor")}
+          placeholder="0"
+        />
+        <MonoInput
+          label="Max Product"
+          type="number"
+          value={form.maxProduct}
+          onChange={setL("maxProduct")}
+          placeholder="0"
+        />
+        <MonoInput
+          label="Max Service"
+          type="number"
+          value={form.maxService}
+          onChange={setL("maxService")}
+          placeholder="0"
+        />
+        <MonoInput
+          label="Max Medicine"
+          type="number"
+          value={form.maxMedicine}
+          onChange={setL("maxMedicine")}
+          placeholder="0"
+        />
+        <MonoInput
+          label="Max Referrer"
+          type="number"
+          value={form.maxReferrer}
+          onChange={setL("maxReferrer")}
+          placeholder="0"
+        />
+        <MonoInput
+          label="Max Admission Space"
+          type="number"
+          value={form.maxAdmissionSpace}
+          onChange={setL("maxAdmissionSpace")}
+          placeholder="0"
+        />
+      </div>
+    </SectionModal>
+  );
+};
+
 /* ─── Lab View Sheet — with per-section edit pencils ─────── */
 
 const LabViewSheet = ({ isOpen, onClose, lab, onToggleActive }) => {
@@ -681,14 +796,7 @@ const LabViewSheet = ({ isOpen, onClose, lab, onToggleActive }) => {
               >
                 #{lab.labKey}
               </span>
-              <button
-                type="button"
-                onClick={() => onToggleActive(lab)}
-                title={lab.isActive ? "Deactivate lab" : "Activate lab"}
-                className="border-none bg-transparent cursor-pointer p-0"
-              >
-                <StatusStamp active={lab.isActive} />
-              </button>
+              <StatusStamp active={lab.isActive} />
             </div>
           </div>
         </div>
@@ -737,13 +845,44 @@ const LabViewSheet = ({ isOpen, onClose, lab, onToggleActive }) => {
               <Zap size={11} /> Invoice fee is forced on for this lab
             </p>
           )}
+
+          <SectionHead icon={Layers} title="Limits" />
+          <div className="grid grid-cols-3 sm:grid-cols-7 gap-2 mt-1">
+            {[
+              ["Staff", lab.limit?.maxStaff ?? 0, TEAL],
+              ["Doctor", lab.limit?.maxDoctor ?? 0, BLUE],
+              ["Product", lab.limit?.maxProduct ?? 0, VIOLET],
+              ["Service", lab.limit?.maxService ?? 0, AMBER],
+              ["Medicine", lab.limit?.maxMedicine ?? 0, BLUE],
+              ["Referrer", lab.limit?.maxReferrer ?? 0, RUST],
+              ["Admission", lab.limit?.maxAdmissionSpace ?? 0, VIOLET],
+            ].map(([l, v, c]) => (
+              <div key={l} className="text-center py-3" style={{ border: `1px solid ${LINE}`, borderRadius: "2px" }}>
+                <p className="text-[8.5px] font-bold uppercase tracking-wide" style={{ color: INK_MUTE }}>
+                  {l}
+                </p>
+                <p className="text-[15px] font-bold font-mono mt-1" style={{ color: c }}>
+                  {v}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
       <div
-        className="flex items-center justify-end px-5 py-3 border-t"
+        className="flex items-center justify-between px-5 py-3 border-t"
         style={{ borderColor: LINE, background: PAPER }}
       >
+        {lab.isActive ? (
+          <SolidBtn tone={RUST} toneDark="#8F3521" onClick={() => onToggleActive(lab)}>
+            <PowerOff size={13} /> Deactivate Lab
+          </SolidBtn>
+        ) : (
+          <SolidBtn tone={TEAL} toneDark={TEAL_DARK} onClick={() => onToggleActive(lab)}>
+            <Power size={13} /> Activate Lab
+          </SolidBtn>
+        )}
         <GhostBtn onClick={onClose}>Close</GhostBtn>
       </div>
     </Sheet>
@@ -756,6 +895,7 @@ const LAB_TABS = [
   { id: "details", label: "Details", icon: Building2 },
   { id: "contact", label: "Contact", icon: Phone },
   { id: "billing", label: "Billing", icon: CreditCard },
+  { id: "limit", label: "Limits", icon: Layers },
 ];
 
 const LabCreateModal = ({ isOpen, onClose, onSubmit }) => {
@@ -776,6 +916,7 @@ const LabCreateModal = ({ isOpen, onClose, onSubmit }) => {
 
   const setC = (k) => (e) => setForm((f) => ({ ...f, contact: { ...f.contact, [k]: e.target.value } }));
   const setB = (k) => (e) => setForm((f) => ({ ...f, billing: { ...f.billing, [k]: e.target.value } }));
+  const setLm = (k) => (e) => setForm((f) => ({ ...f, limit: { ...f.limit, [k]: e.target.value } }));
 
   const tabIdx = LAB_TABS.findIndex((t) => t.id === tab);
   const isLast = tabIdx === LAB_TABS.length - 1;
@@ -1057,6 +1198,66 @@ const LabCreateModal = ({ isOpen, onClose, onSubmit }) => {
             </div>
           </div>
         </div>
+
+        {/* LIMITS */}
+        <div className={`${tab === "limit" ? "flex" : "hidden"} flex-col gap-4 p-5`}>
+          <div
+            className="p-4 space-y-4"
+            style={{ background: PAPER, border: `1px solid ${LINE}`, borderRadius: "2px" }}
+          >
+            <div className="grid grid-cols-3 gap-3">
+              <MonoInput
+                label="Max Staff"
+                type="number"
+                value={form.limit.maxStaff}
+                onChange={setLm("maxStaff")}
+                placeholder="0"
+              />
+              <MonoInput
+                label="Max Doctor"
+                type="number"
+                value={form.limit.maxDoctor}
+                onChange={setLm("maxDoctor")}
+                placeholder="0"
+              />
+              <MonoInput
+                label="Max Product"
+                type="number"
+                value={form.limit.maxProduct}
+                onChange={setLm("maxProduct")}
+                placeholder="0"
+              />
+              <MonoInput
+                label="Max Service"
+                type="number"
+                value={form.limit.maxService}
+                onChange={setLm("maxService")}
+                placeholder="0"
+              />
+              <MonoInput
+                label="Max Medicine"
+                type="number"
+                value={form.limit.maxMedicine}
+                onChange={setLm("maxMedicine")}
+                placeholder="0"
+              />
+              <MonoInput
+                label="Max Referrer"
+                type="number"
+                value={form.limit.maxReferrer}
+                onChange={setLm("maxReferrer")}
+                placeholder="0"
+              />
+              <MonoInput
+                label="Max Admission Space"
+                type="number"
+                value={form.limit.maxAdmissionSpace}
+                onChange={setLm("maxAdmissionSpace")}
+                placeholder="0"
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
       <div
@@ -1266,9 +1467,67 @@ const StatCard = ({ icon: Icon, label, value, tone = TEAL, tint = TEAL_TINT }) =
   </div>
 );
 
+/* ─── Compact edit dropdown (avoids the action row overflowing) ──── */
+
+const EditMenu = ({ onSelect }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  const items = [
+    { key: "details", label: "Details", icon: Building2, color: TEAL_DARK },
+    { key: "contact", label: "Contact", icon: Phone, color: VIOLET },
+    { key: "billing", label: "Billing", icon: CreditCard, color: AMBER },
+    { key: "limit", label: "Limits", icon: Layers, color: BLUE },
+  ];
+
+  return (
+    <div className="relative shrink-0" ref={ref}>
+      <IconBtn icon={Pencil} title="Edit lab" onClick={() => setOpen((o) => !o)} />
+      {open && (
+        <div
+          className="absolute left-0 top-full mt-1 z-20 py-1 w-36"
+          style={{
+            background: "white",
+            border: `1px solid ${LINE}`,
+            borderRadius: "2px",
+            boxShadow: "0 4px 14px rgba(28,35,33,0.12)",
+          }}
+        >
+          {items.map(({ key, label, icon: Icon, color }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => {
+                onSelect(key);
+                setOpen(false);
+              }}
+              className="flex items-center gap-2 w-full px-3 py-2 text-[11.5px] font-semibold cursor-pointer transition-colors"
+              style={{ color: INK, background: "transparent", border: "none" }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = GROUND)}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+            >
+              <Icon size={12} style={{ color }} />
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /* ─── Lab card — modern, clean ────────────────────────────── */
 
-const LabCard = ({ lab, onView, onManageStaff, onEditSection }) => (
+const LabCard = ({ lab, onView, onManageStaff, onEditSection, onToggleActive }) => (
   <div
     className="group flex flex-col rounded-xl bg-white transition-all duration-150"
     style={{
@@ -1352,45 +1611,22 @@ const LabCard = ({ lab, onView, onManageStaff, onEditSection }) => (
 
     {/* Actions */}
     <div className="flex items-center justify-between gap-2 px-3 py-2.5">
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => onEditSection(lab, "details")}
-          title="Edit lab details"
-          className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[10.5px] font-semibold cursor-pointer transition-colors"
-          style={{ color: TEAL_DARK }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = TEAL_TINT)}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-        >
-          <Pencil size={11} /> Details
-        </button>
-        <button
-          type="button"
-          onClick={() => onEditSection(lab, "contact")}
-          title="Edit contact"
-          className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[10.5px] font-semibold cursor-pointer transition-colors"
-          style={{ color: VIOLET }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = VIOLET_TINT)}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-        >
-          <Pencil size={11} /> Contact
-        </button>
-        <button
-          type="button"
-          onClick={() => onEditSection(lab, "billing")}
-          title="Edit billing"
-          className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[10.5px] font-semibold cursor-pointer transition-colors"
-          style={{ color: AMBER }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = AMBER_TINT)}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-        >
-          <Pencil size={11} /> Billing
-        </button>
-      </div>
+      <EditMenu onSelect={(section) => onEditSection(lab, section)} />
 
       <div className="flex items-center gap-1 shrink-0">
         <IconBtn icon={Info} tone={VIOLET} tint={VIOLET_TINT} title="View lab" onClick={() => onView(lab)} />
         <IconBtn icon={Users} tone={AMBER} tint={AMBER_TINT} title="View staff" onClick={() => onManageStaff(lab)} />
+        {lab.isActive ? (
+          <IconBtn
+            icon={PowerOff}
+            tone={RUST}
+            tint={RUST_TINT}
+            title="Deactivate lab"
+            onClick={() => onToggleActive(lab)}
+          />
+        ) : (
+          <IconBtn icon={Power} tone={TEAL} tint={TEAL_TINT} title="Activate lab" onClick={() => onToggleActive(lab)} />
+        )}
       </div>
     </div>
   </div>
@@ -1560,6 +1796,15 @@ const Labs = () => {
           monthlyFee: Number(form.billing.monthlyFee) || 0,
           commission: Number(form.billing.commission) || 0,
         },
+        limit: {
+          maxStaff: Number(form.limit.maxStaff) || 0,
+          maxProduct: Number(form.limit.maxProduct) || 0,
+          maxService: Number(form.limit.maxService) || 0,
+          maxMedicine: Number(form.limit.maxMedicine) || 0,
+          maxReferrer: Number(form.limit.maxReferrer) || 0,
+          maxDoctor: Number(form.limit.maxDoctor) || 0,
+          maxAdmissionSpace: Number(form.limit.maxAdmissionSpace) || 0,
+        },
       });
       showPopup("success", "Lab registered successfully!");
       fetchStats();
@@ -1584,7 +1829,8 @@ const Labs = () => {
     fetchLabs(page, search);
   };
 
-  const handleToggleActive = async (lab) => {
+  // Actually performs the activate/deactivate call after the user confirms.
+  const performToggleActive = async (lab) => {
     try {
       if (lab.isActive) await labService.deactivateLab(lab._id);
       else await labService.activateLab(lab._id);
@@ -1593,6 +1839,19 @@ const Labs = () => {
     } catch (err) {
       showPopup("error", err?.response?.data?.message || "Failed to update status.");
     }
+  };
+
+  // Opens a confirmation popup before flipping a lab's active status.
+  const handleToggleActive = (lab) => {
+    const type = lab.isActive ? "deactivate" : "activate";
+    setPopup({
+      open: true,
+      type,
+      message: lab.isActive
+        ? `"${lab.name}" will be deactivated. Staff will lose access until it's reactivated.`
+        : `"${lab.name}" will be activated and regain full access.`,
+      onConfirm: () => performToggleActive(lab),
+    });
   };
 
   const isSearchMode = search.trim().length > 0;
@@ -1738,6 +1997,7 @@ const Labs = () => {
                 onView={(l) => setViewLab(l)}
                 onManageStaff={(l) => setStaffDrawer(l)}
                 onEditSection={(l, section) => setEditTarget({ lab: l, section })}
+                onToggleActive={handleToggleActive}
               />
             ))
           )}
@@ -1776,6 +2036,13 @@ const Labs = () => {
         onSaved={() => refreshLab(editTarget.lab._id)}
         showPopup={showPopup}
       />
+      <LabLimitModal
+        isOpen={editTarget?.section === "limit"}
+        onClose={() => setEditTarget(null)}
+        lab={editTarget?.lab}
+        onSaved={() => refreshLab(editTarget.lab._id)}
+        showPopup={showPopup}
+      />
 
       {staffDrawer && <StaffDrawer lab={staffDrawer} onClose={() => setStaffDrawer(null)} showPopup={showPopup} />}
 
@@ -1785,7 +2052,9 @@ const Labs = () => {
           message={popup.message}
           onClose={closePopup}
           onConfirm={popup.onConfirm}
-          confirmText="Yes, proceed"
+          confirmText={
+            popup.type === "deactivate" ? "Deactivate" : popup.type === "activate" ? "Activate" : "Yes, proceed"
+          }
           cancelText="Cancel"
         />
       )}

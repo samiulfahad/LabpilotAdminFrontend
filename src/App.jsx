@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { useAuthStore } from "./store/authStore";
 
@@ -7,7 +8,7 @@ import Home from "./pages/home";
 import Account from "./pages/account";
 import Labs from "./pages/labs";
 import LabManagement from "./pages/lab-management";
-import TestCatalog from "./pages/test-catalog";
+import TestCatalog from "./pages/testCatalog";
 import SchemaEngine from "./pages/schemaEngine";
 import SchemaBuilder from "./pages/schemaBuilder";
 import Zones from "./pages/zones";
@@ -34,6 +35,21 @@ const ProtectedRoutes = () => {
 // ─── Main App Component ─────────────────────────────────────────────────────
 function App() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isInitializing = useAuthStore((s) => s.isInitializing);
+  const initialize = useAuthStore((s) => s.initialize);
+
+  // Access token lives in memory only (see authStore.js), so every fresh
+  // page load starts with token: null. This re-derives it from the
+  // httpOnly refresh cookie before any protected route is allowed to
+  // render, so isAuthenticated always reflects a session actually
+  // verified against the server — never a stale persisted flag.
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
+
+  if (isInitializing) {
+    return null; // session check in flight — swap for a splash/spinner if desired
+  }
 
   return (
     <Routes>

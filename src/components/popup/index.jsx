@@ -1,8 +1,8 @@
 import React from "react";
-import { CheckCircle2, XCircle, AlertTriangle, LogOut, X } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, LogOut, X, Power, PowerOff } from "lucide-react";
 import Portal from "../Portal";
 
-// Only four types: success, error, warning, logout
+// Six types: success, error, warning, logout, activate, deactivate
 const typeConfig = {
   success: {
     icon: CheckCircle2,
@@ -35,6 +35,26 @@ const typeConfig = {
   logout: {
     icon: LogOut,
     title: "Log out?",
+    titleColor: "text-red-600",
+    iconBgColor: "bg-gradient-to-br from-red-100 to-rose-100",
+    iconColor: "text-red-600",
+    confirmButtonColor: "bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700",
+    cancelButtonColor: "bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700",
+    singleButton: false,
+  },
+  activate: {
+    icon: Power,
+    title: "Activate?",
+    titleColor: "text-green-600",
+    iconBgColor: "bg-gradient-to-br from-green-100 to-emerald-100",
+    iconColor: "text-green-600",
+    confirmButtonColor: "bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700",
+    cancelButtonColor: "bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700",
+    singleButton: false,
+  },
+  deactivate: {
+    icon: PowerOff,
+    title: "Deactivate?",
     titleColor: "text-red-600",
     iconBgColor: "bg-gradient-to-br from-red-100 to-rose-100",
     iconColor: "text-red-600",

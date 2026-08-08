@@ -15,28 +15,14 @@ const labService = {
   updateLabDetails: (id, details) => api.patch(`/labs/${id}/details`, details),
   updateLabContact: (id, contact) => api.patch(`/labs/${id}/contact`, { contact }),
   updateLabBilling: (id, billing) => api.patch(`/labs/${id}/billing`, { billing }),
+  updateLabLimit: (id, limit) => api.patch(`/labs/${id}/limit`, { limit }),
 
   activateLab: (id) => api.patch(`/labs/${id}/activate`),
   deactivateLab: (id) => api.patch(`/labs/${id}/deactivate`),
-  deleteLab: (id) => api.delete(`/labs/${id}`),
 
-  // ─── STAFF METHODS ──────────────────────────────────────────
+  // ─── STAFF METHODS (view only — backend exposes no staff mutation routes) ──
   getAllStaff: (labId) => api.get(`/labs/${labId}/staff`),
   getStaffById: (labId, id) => api.get(`/labs/${labId}/staff/${id}`),
-
-  createAdmin: (labId, data) => api.post(`/labs/${labId}/staff/admin`, data),
-  createMember: (labId, data) => api.post(`/labs/${labId}/staff/member`, data),
-  createSupport: (labId, data) => api.post(`/labs/${labId}/staff/support`, data),
-
-  updateStaff: (labId, id, data) => api.patch(`/labs/${labId}/staff/${id}`, data),
-  // ✅ Fixed: correct endpoint for support password
-  updateSupportPassword: (labId, data) => api.patch(`/labs/${labId}/staff/support/password`, data),
-
-  activateStaff: (labId, id) => api.patch(`/labs/${labId}/staff/${id}/activate`),
-  deactivateStaff: (labId, id) => api.patch(`/labs/${labId}/staff/${id}/deactivate`),
-
-  deleteStaff: (labId, id) => api.delete(`/labs/${labId}/staff/${id}`),
-  deleteSupport: (labId) => api.delete(`/labs/${labId}/staff/support`),
 };
 
 export default labService;

@@ -37,14 +37,24 @@ const fmtDate = (ms) => {
   const bstMs = ms + BST_OFFSET_MS;
   const d = new Date(bstMs);
   const floored = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(floored);
+  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(
+    floored,
+  );
 };
 
 const fmtDateUTC = (ms) =>
-  ms ? new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(ms)) : "—";
+  ms
+    ? new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(
+        new Date(ms),
+      )
+    : "—";
 
 const fmtMonth = (ms) =>
-  ms ? new Intl.DateTimeFormat("en-GB", { month: "short", year: "numeric" }).format(new Date(ms + BST_OFFSET_MS)) : "—";
+  ms
+    ? new Intl.DateTimeFormat("en-GB", { month: "short", year: "numeric", timeZone: "UTC" }).format(
+        new Date(ms + BST_OFFSET_MS),
+      )
+    : "—";
 
 const fmtCurrency = (n) =>
   typeof n === "number"
@@ -55,7 +65,9 @@ const isOverdue = (ms) => ms && Date.now() > ms;
 
 // ─── Skeleton primitives ──────────────────────────────────────────────────────
 
-const Bone = ({ className = "" }) => <div className={`bg-slate-200 rounded-lg animate-pulse ${className}`} />;
+const Bone = ({ className = "", style }) => (
+  <div className={`bg-slate-200 rounded-lg animate-pulse ${className}`} style={style} />
+);
 
 const LabCardSkeleton = () => (
   <div className="border border-slate-100 rounded-2xl bg-white shadow-sm p-5">
@@ -99,9 +111,9 @@ const HistoryRowSkeleton = () => (
 
 const RunRowSkeleton = () => (
   <tr className="border-b border-slate-50">
-    {[28, 24, 20, 12, 36, 16, 8].map((w, i) => (
+    {[112, 96, 80, 48, 144, 64, 32].map((w, i) => (
       <td key={i} className="px-4 py-3">
-        <Bone className={`h-4 w-${w}`} />
+        <Bone className="h-4" style={{ width: w }} />
       </td>
     ))}
   </tr>
@@ -395,7 +407,9 @@ const LabHistoryDrawer = ({ labKey, onPay, onExtend }) => {
                         className="text-[10.5px] bg-slate-100 border border-slate-200 rounded-md px-2 py-0.5"
                       >
                         <span className="text-slate-400 capitalize">{k}:</span>{" "}
-                        <span className="font-bold text-slate-600">{typeof v === "number" ? fmtCurrency(v) : v}</span>
+                        <span className="font-bold text-slate-600">
+                          {typeof v === "boolean" ? (v ? "Yes" : "No") : typeof v === "number" ? fmtCurrency(v) : v}
+                        </span>
                       </span>
                     ))}
                   </div>
@@ -1109,9 +1123,11 @@ export default function AdminBilling() {
     }
   };
 
-  const now = new Date();
-  const currentMonth1 = now.getMonth() + 1;
-  const maxYear = currentMonth1 === 1 ? now.getFullYear() - 1 : now.getFullYear();
+  // Compute "now" in BST (not the browser's local timezone) so this matches
+  // the backend's nowBST()-based validation in POST /billing/generate.
+  const bstNow = new Date(Date.now() + BST_OFFSET_MS);
+  const currentMonth1 = bstNow.getUTCMonth() + 1;
+  const maxYear = currentMonth1 === 1 ? bstNow.getUTCFullYear() - 1 : bstNow.getUTCFullYear();
   const maxMonth = currentMonth1 === 1 ? 12 : currentMonth1 - 1;
 
   const unpaidPages = Math.ceil(unpaidTotal / UNPAID_LIMIT);

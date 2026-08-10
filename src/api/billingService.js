@@ -32,8 +32,9 @@ const billingService = {
 
   // POST retry failed labs from a billing run
   retryFailed: (runId) => api.post(`/billing/runs/${runId}/retry-failed`),
+
   // DELETE all bills for a specific billing period
-deletePeriodBills: (periodStart) => api.delete(`/billing/period/${periodStart}`),
+  deletePeriodBills: (periodStart) => api.delete(`/billing/period/${periodStart}`),
 };
 
 export default billingService;

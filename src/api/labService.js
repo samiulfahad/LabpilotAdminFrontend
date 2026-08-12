@@ -2,7 +2,6 @@
 import api from "./baseAPI";
 
 const labService = {
-  // ─── LAB METHODS ────────────────────────────────────────────
   getStats: () => api.get("/labs/stats"),
   getLabs: ({ page = 1, limit = 10, labKey = "" } = {}) => {
     const params = { page, limit };
@@ -20,10 +19,6 @@ const labService = {
 
   activateLab: (id) => api.patch(`/labs/${id}/activate`),
   deactivateLab: (id) => api.patch(`/labs/${id}/deactivate`),
-
-  // ─── STAFF METHODS (view only — backend exposes no staff mutation routes) ──
-  getAllStaff: (labId) => api.get(`/labs/${labId}/staff`),
-  getStaffById: (labId, id) => api.get(`/labs/${labId}/staff/${id}`),
 };
 
 export default labService;

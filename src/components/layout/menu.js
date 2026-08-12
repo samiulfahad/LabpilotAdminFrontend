@@ -13,6 +13,7 @@ import {  } from "lucide-react";
 const menu = [
   { label: "Home", path: "/", icon: LayoutDashboard },
   { label: "Labs", path: "/labs", icon: FlaskConical },
+  { label: "Lab Staffs", path: "/lab-staffs", icon: FlaskConical },
   { label: "Support Admins", path: "/support-admin", icon: FlaskConical },
   { label: "Billing", path: "/billing", icon: MapPin },
   { label: "Lab Management", path: "/lab-management", icon: SlidersHorizontal },

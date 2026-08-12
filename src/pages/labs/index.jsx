@@ -15,10 +15,6 @@ import {
   RefreshCw,
   Activity,
   Pencil,
-  Users,
-  ShieldCheck,
-  UserCog,
-  Headset,
   Power,
   PowerOff,
   Info,
@@ -28,8 +24,7 @@ import {
 } from "lucide-react";
 
 import Popup from "../../components/popup";
-import labService from "../../api/labService"; // lab CRUD + staff (view only)
-import zoneService from "../../api/zoneService";
+import labService from "../../api/labService"; // ONLY dependency — lab CRUD
 
 const LIMIT = 20;
 
@@ -51,7 +46,6 @@ const AMBER_TINT = "#F3E9D6";
 const VIOLET = "#5B4E8C";
 const VIOLET_TINT = "#EBE8F5";
 const BLUE = "#2B5F8A";
-const BLUE_TINT = "#E3EDF4";
 
 const dotGround = {
   backgroundColor: GROUND,
@@ -108,7 +102,7 @@ const sanitizeContact = (contact) => {
 
 /* ─── Portal shell ────────────────────────────────────────── */
 
-const Sheet = ({ isOpen, onClose, children, width = "560px" }) => {
+const Sheet = ({ isOpen, onClose, children, width = "560px", zIndex = 70 }) => {
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -119,7 +113,7 @@ const Sheet = ({ isOpen, onClose, children, width = "560px" }) => {
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+    <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex }}>
       <div className="absolute inset-0 bg-[#1C2321]/45 backdrop-blur-[1px]" onClick={onClose} />
       <div
         className="relative w-full max-h-[88vh] flex flex-col overflow-hidden border"
@@ -444,7 +438,6 @@ const LabDetailsModal = ({ isOpen, onClose, lab, onSaved, showPopup }) => {
 
 const LabContactModal = ({ isOpen, onClose, lab, onSaved, showPopup }) => {
   const [form, setForm] = useState(EMPTY_LAB.contact);
-  const [zones, setZones] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -459,10 +452,6 @@ const LabContactModal = ({ isOpen, onClose, lab, onSaved, showPopup }) => {
       zone: lab.contact?.zone ?? "",
       zoneId: lab.contact?.zoneId ?? "",
     });
-    zoneService
-      .getZones()
-      .then((r) => setZones(Array.isArray(r.data) ? r.data : (r.data?.data ?? [])))
-      .catch(() => setZones([]));
   }, [isOpen, lab]);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -519,21 +508,7 @@ const LabContactModal = ({ isOpen, onClose, lab, onSaved, showPopup }) => {
           placeholder="private@example.com"
         />
         <TextInput label="District" value={form.district} onChange={set("district")} placeholder="Dhaka" />
-        <SelectInput
-          label="Zone"
-          value={form.zoneId}
-          onChange={(e) => {
-            const z = zones.find((z) => z._id === e.target.value);
-            setForm((f) => ({ ...f, zone: z?.name ?? "", zoneId: e.target.value }));
-          }}
-        >
-          <option value="">— Select zone —</option>
-          {zones.map((z) => (
-            <option key={z._id} value={z._id}>
-              {z.name}
-            </option>
-          ))}
-        </SelectInput>
+        <TextInput label="Zone" value={form.zone} onChange={set("zone")} placeholder="Zone name" />
       </div>
       <TextInput label="Address" value={form.address} onChange={set("address")} placeholder="Full address" />
     </SectionModal>
@@ -976,16 +951,11 @@ const LabCreateModal = ({ isOpen, onClose, onSubmit }) => {
   const [form, setForm] = useState(EMPTY_LAB);
   const [tab, setTab] = useState("details");
   const [loading, setLoading] = useState(false);
-  const [zones, setZones] = useState([]);
 
   useEffect(() => {
     if (!isOpen) return;
     setTab("details");
     setForm(EMPTY_LAB);
-    zoneService
-      .getZones()
-      .then((r) => setZones(Array.isArray(r.data) ? r.data : (r.data?.data ?? [])))
-      .catch(() => setZones([]));
   }, [isOpen]);
 
   const setC = (k) => (e) => setForm((f) => ({ ...f, contact: { ...f.contact, [k]: e.target.value } }));
@@ -1173,21 +1143,7 @@ const LabCreateModal = ({ isOpen, onClose, onSubmit }) => {
                 onChange={setC("district")}
                 placeholder="Dhaka"
               />
-              <SelectInput
-                label="Zone"
-                value={form.contact.zoneId}
-                onChange={(e) => {
-                  const z = zones.find((z) => z._id === e.target.value);
-                  setForm((f) => ({ ...f, contact: { ...f.contact, zone: z?.name ?? "", zoneId: e.target.value } }));
-                }}
-              >
-                <option value="">— Select zone —</option>
-                {zones.map((z) => (
-                  <option key={z._id} value={z._id}>
-                    {z.name}
-                  </option>
-                ))}
-              </SelectInput>
+              <TextInput label="Zone" value={form.contact.zone} onChange={setC("zone")} placeholder="Zone name" />
             </div>
             <TextInput
               label="Address"
@@ -1382,159 +1338,6 @@ const LabCreateModal = ({ isOpen, onClose, onSubmit }) => {
   );
 };
 
-/* ─── Staff Panel + Drawer (VIEW ONLY — backend exposes no staff
-   create/update/delete/activate routes on labRoutes.js, only
-   GET /labs/:labId/staff and GET /labs/:labId/staff/:id) ────── */
-
-const ROLE_META = {
-  admin: { label: "Admin", icon: ShieldCheck, color: TEAL, tint: TEAL_TINT },
-  staff: { label: "Staff", icon: UserCog, color: VIOLET, tint: VIOLET_TINT },
-  supportAdmin: { label: "Support", icon: Headset, color: AMBER, tint: AMBER_TINT },
-};
-
-const StaffPanel = ({ lab, onClose, showPopup }) => {
-  const [staffList, setStaffList] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  const fetchStaff = async () => {
-    setLoading(true);
-    try {
-      const r = await labService.getAllStaff(lab._id);
-      setStaffList(Array.isArray(r.data) ? r.data : []);
-    } catch {
-      showPopup("error", "Failed to load staff.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchStaff();
-  }, [lab._id]);
-
-  return (
-    <div className="flex flex-col h-full">
-      <div
-        className="flex items-center justify-between px-5 py-4 border-b"
-        style={{ borderColor: LINE, background: PAPER }}
-      >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-9 h-9 flex items-center justify-center shrink-0"
-            style={{ background: VIOLET, borderRadius: "2px" }}
-          >
-            <Users size={15} className="text-white" />
-          </div>
-          <div>
-            <p className="text-[13.5px] font-bold tracking-tight leading-none" style={{ color: INK }}>
-              Staff — {lab.name}
-            </p>
-            <p className="text-[10.5px] mt-1" style={{ color: INK_MUTE }}>
-              {staffList.length} member{staffList.length !== 1 ? "s" : ""}
-            </p>
-          </div>
-        </div>
-        <IconBtn icon={X} onClick={onClose} title="Close" />
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2" style={dotGround}>
-        {loading ? (
-          Array.from({ length: 4 }).map((_, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-3 px-4 py-3 animate-pulse"
-              style={{ background: "white", border: `1px solid ${LINE}`, borderRadius: "2px" }}
-            >
-              <div className="w-8 h-8 shrink-0" style={{ background: "#EEEBE1", borderRadius: "2px" }} />
-              <div className="flex-1 space-y-2">
-                <div className="h-3 w-2/5" style={{ background: "#EEEBE1", borderRadius: "2px" }} />
-                <div className="h-2.5 w-3/5" style={{ background: "#F2F0E8", borderRadius: "2px" }} />
-              </div>
-            </div>
-          ))
-        ) : staffList.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <div
-              className="w-12 h-12 flex items-center justify-center mb-3"
-              style={{ border: `2px dashed ${LINE}`, borderRadius: "2px" }}
-            >
-              <Users size={18} style={{ color: "#C7C1B2" }} />
-            </div>
-            <p className="text-[13px] font-bold mb-1" style={{ color: INK_MUTE }}>
-              No staff yet
-            </p>
-            <p className="text-[11px]" style={{ color: INK_MUTE }}>
-              Staff members added elsewhere will appear here.
-            </p>
-          </div>
-        ) : (
-          staffList.map((member) => {
-            const meta = ROLE_META[member.role] ?? ROLE_META.staff;
-            const Icon = meta.icon;
-            return (
-              <div
-                key={member._id}
-                className="flex items-center gap-3 px-4 py-3 transition-colors"
-                style={{ background: "white", border: `1px solid ${LINE}`, borderRadius: "2px" }}
-              >
-                <div
-                  className="w-8 h-8 flex items-center justify-center shrink-0"
-                  style={{ background: meta.tint, color: meta.color, borderRadius: "2px" }}
-                >
-                  <Icon size={13} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="text-[12.5px] font-bold leading-none" style={{ color: INK }}>
-                      {member.name}
-                    </p>
-                    <span
-                      className="px-1.5 py-[1px] text-[9px] font-bold"
-                      style={{ color: meta.color, background: meta.tint, borderRadius: "2px" }}
-                    >
-                      {meta.label}
-                    </span>
-                    {!member.isActive && <StatusStamp active={false} />}
-                  </div>
-                  <p className="text-[10.5px] mt-1" style={{ color: INK_MUTE }}>
-                    {member.phone}
-                    {member.email ? ` · ${member.email}` : ""}
-                  </p>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-    </div>
-  );
-};
-
-const StaffDrawer = ({ lab, onClose, showPopup }) => {
-  useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  return createPortal(
-    <div className="fixed inset-0 z-[70] flex justify-end">
-      <div className="absolute inset-0 bg-[#1C2321]/45 backdrop-blur-[1px]" onClick={onClose} />
-      <div
-        className="relative w-full max-w-md shadow-2xl flex flex-col animate-slide-in-right border-l"
-        style={{ background: PAPER, borderColor: LINE }}
-      >
-        <StaffPanel lab={lab} onClose={onClose} showPopup={showPopup} />
-      </div>
-      <style>{`
-        @keyframes slide-in-right { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-        .animate-slide-in-right { animation: slide-in-right 0.2s cubic-bezier(0.16,1,0.3,1) forwards; }
-      `}</style>
-    </div>,
-    document.body,
-  );
-};
-
 /* ─── Stat tally card ────────────────────────────────────── */
 
 const StatCard = ({ icon: Icon, label, value, tone = TEAL, tint = TEAL_TINT }) => (
@@ -1620,7 +1423,7 @@ const EditMenu = ({ onSelect }) => {
 
 /* ─── Lab card — modern, clean ────────────────────────────── */
 
-const LabCard = ({ lab, onView, onManageStaff, onEditSection, onToggleActive }) => (
+const LabCard = ({ lab, onView, onEditSection, onToggleActive }) => (
   <div
     className="group flex flex-col rounded-xl bg-white transition-all duration-150"
     style={{
@@ -1708,7 +1511,6 @@ const LabCard = ({ lab, onView, onManageStaff, onEditSection, onToggleActive }) 
 
       <div className="flex items-center gap-1 shrink-0">
         <IconBtn icon={Info} tone={VIOLET} tint={VIOLET_TINT} title="View lab" onClick={() => onView(lab)} />
-        <IconBtn icon={Users} tone={AMBER} tint={AMBER_TINT} title="View staff" onClick={() => onManageStaff(lab)} />
         {lab.isActive ? (
           <IconBtn
             icon={PowerOff}
@@ -1816,7 +1618,6 @@ const Labs = () => {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [viewLab, setViewLab] = useState(null);
   const [editTarget, setEditTarget] = useState(null); // { lab, section: "details"|"contact"|"billing"|"limit"|"medicalReport" }
-  const [staffDrawer, setStaffDrawer] = useState(null);
   const [popup, setPopup] = useState({ open: false, type: "success", message: "", onConfirm: null });
   const debounceRef = useRef(null);
 
@@ -2093,7 +1894,6 @@ const Labs = () => {
                 key={lab._id}
                 lab={lab}
                 onView={(l) => setViewLab(l)}
-                onManageStaff={(l) => setStaffDrawer(l)}
                 onEditSection={(l, section) => setEditTarget({ lab: l, section })}
                 onToggleActive={handleToggleActive}
               />
@@ -2148,8 +1948,6 @@ const Labs = () => {
         onSaved={() => refreshLab(editTarget.lab._id)}
         showPopup={showPopup}
       />
-
-      {staffDrawer && <StaffDrawer lab={staffDrawer} onClose={() => setStaffDrawer(null)} showPopup={showPopup} />}
 
       {popup.open && (
         <Popup

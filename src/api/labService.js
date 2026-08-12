@@ -16,6 +16,7 @@ const labService = {
   updateLabContact: (id, contact) => api.patch(`/labs/${id}/contact`, { contact }),
   updateLabBilling: (id, billing) => api.patch(`/labs/${id}/billing`, { billing }),
   updateLabLimit: (id, limit) => api.patch(`/labs/${id}/limit`, { limit }),
+  updateLabMedicalReport: (id, medicalReport) => api.patch(`/labs/${id}/medical-report`, { medicalReport }),
 
   activateLab: (id) => api.patch(`/labs/${id}/activate`),
   deactivateLab: (id) => api.patch(`/labs/${id}/deactivate`),

@@ -24,6 +24,7 @@ import {
   Info,
   Lock,
   Zap,
+  Ruler,
 } from "lucide-react";
 
 import Popup from "../../components/popup";
@@ -84,12 +85,26 @@ const EMPTY_LAB = {
     maxDoctor: "",
     maxAdmissionSpace: "",
   },
+  medicalReport: { padHeight: "" },
 };
 
 const LAB_TYPE_OPTIONS = [
   { value: "diagnostic", label: "Diagnostic Center", icon: FlaskConical },
   { value: "hospital", label: "Hospital", icon: Building2 },
 ];
+
+// Backend contactSchema validates zoneId (24-char ObjectId pattern) and
+// publicEmail/privateEmail (email format). An empty string satisfies
+// neither, so any untouched optional contact field must be dropped from
+// the payload entirely rather than sent as "" — otherwise Fastify's
+// schema validation 400s before the request even reaches the handler.
+const sanitizeContact = (contact) => {
+  const out = {};
+  for (const [key, value] of Object.entries(contact)) {
+    if (value !== "" && value != null) out[key] = value;
+  }
+  return out;
+};
 
 /* ─── Portal shell ────────────────────────────────────────── */
 
@@ -456,7 +471,9 @@ const LabContactModal = ({ isOpen, onClose, lab, onSaved, showPopup }) => {
     if (loading) return;
     setLoading(true);
     try {
-      await labService.updateLabContact(lab._id, form);
+      // Strip empty optional fields — the backend rejects "" for
+      // zoneId (ObjectId pattern) and publicEmail/privateEmail (email format).
+      await labService.updateLabContact(lab._id, sanitizeContact(form));
       showPopup("success", "Contact info updated.");
       await onSaved();
       onClose();
@@ -751,6 +768,59 @@ const LabLimitModal = ({ isOpen, onClose, lab, onSaved, showPopup }) => {
   );
 };
 
+/* ─── Section 5: Medical Report modal ─────────────────────── */
+
+const LabMedicalReportModal = ({ isOpen, onClose, lab, onSaved, showPopup }) => {
+  const [form, setForm] = useState({ padHeight: "" });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && lab) {
+      setForm({ padHeight: lab.medicalReport?.padHeight ?? "" });
+    }
+  }, [isOpen, lab]);
+
+  const handleSave = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      await labService.updateLabMedicalReport(lab._id, {
+        padHeight: Number(form.padHeight) || 0,
+      });
+      showPopup("success", "Medical report settings updated.");
+      await onSaved();
+      onClose();
+    } catch (err) {
+      showPopup("error", err?.response?.data?.message || "Failed to update medical report settings.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!lab) return null;
+
+  return (
+    <SectionModal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Edit Medical Report"
+      icon={Ruler}
+      tone={VIOLET}
+      onSave={handleSave}
+      loading={loading}
+    >
+      <MonoInput
+        label="Pad Height (mm)"
+        type="number"
+        value={form.padHeight}
+        onChange={(e) => setForm((f) => ({ ...f, padHeight: e.target.value }))}
+        placeholder="0"
+        hint="Top offset used when printing this lab's medical report letterhead."
+      />
+    </SectionModal>
+  );
+};
+
 /* ─── Lab View Sheet — with per-section edit pencils ─────── */
 
 const LabViewSheet = ({ isOpen, onClose, lab, onToggleActive }) => {
@@ -867,6 +937,9 @@ const LabViewSheet = ({ isOpen, onClose, lab, onToggleActive }) => {
               </div>
             ))}
           </div>
+
+          <SectionHead icon={Ruler} title="Medical Report" />
+          <Leader label="Pad Height" value={lab.medicalReport?.padHeight ? `${lab.medicalReport.padHeight}mm` : null} />
         </div>
       </div>
 
@@ -896,6 +969,7 @@ const LAB_TABS = [
   { id: "contact", label: "Contact", icon: Phone },
   { id: "billing", label: "Billing", icon: CreditCard },
   { id: "limit", label: "Limits", icon: Layers },
+  { id: "medicalReport", label: "Report", icon: Ruler },
 ];
 
 const LabCreateModal = ({ isOpen, onClose, onSubmit }) => {
@@ -917,6 +991,7 @@ const LabCreateModal = ({ isOpen, onClose, onSubmit }) => {
   const setC = (k) => (e) => setForm((f) => ({ ...f, contact: { ...f.contact, [k]: e.target.value } }));
   const setB = (k) => (e) => setForm((f) => ({ ...f, billing: { ...f.billing, [k]: e.target.value } }));
   const setLm = (k) => (e) => setForm((f) => ({ ...f, limit: { ...f.limit, [k]: e.target.value } }));
+  const setMR = (k) => (e) => setForm((f) => ({ ...f, medicalReport: { ...f.medicalReport, [k]: e.target.value } }));
 
   const tabIdx = LAB_TABS.findIndex((t) => t.id === tab);
   const isLast = tabIdx === LAB_TABS.length - 1;
@@ -1258,6 +1333,23 @@ const LabCreateModal = ({ isOpen, onClose, onSubmit }) => {
             </div>
           </div>
         </div>
+
+        {/* MEDICAL REPORT */}
+        <div className={`${tab === "medicalReport" ? "flex" : "hidden"} flex-col gap-4 p-5`}>
+          <div
+            className="p-4 space-y-4"
+            style={{ background: PAPER, border: `1px solid ${LINE}`, borderRadius: "2px" }}
+          >
+            <MonoInput
+              label="Pad Height (mm)"
+              type="number"
+              value={form.medicalReport.padHeight}
+              onChange={setMR("padHeight")}
+              placeholder="0"
+              hint="Top offset used when printing this lab's medical report letterhead."
+            />
+          </div>
+        </div>
       </div>
 
       <div
@@ -1487,6 +1579,7 @@ const EditMenu = ({ onSelect }) => {
     { key: "contact", label: "Contact", icon: Phone, color: VIOLET },
     { key: "billing", label: "Billing", icon: CreditCard, color: AMBER },
     { key: "limit", label: "Limits", icon: Layers, color: BLUE },
+    { key: "medicalReport", label: "Report", icon: Ruler, color: VIOLET },
   ];
 
   return (
@@ -1722,7 +1815,7 @@ const Labs = () => {
   const [total, setTotal] = useState(0);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [viewLab, setViewLab] = useState(null);
-  const [editTarget, setEditTarget] = useState(null); // { lab, section: "details"|"contact"|"billing" }
+  const [editTarget, setEditTarget] = useState(null); // { lab, section: "details"|"contact"|"billing"|"limit"|"medicalReport" }
   const [staffDrawer, setStaffDrawer] = useState(null);
   const [popup, setPopup] = useState({ open: false, type: "success", message: "", onConfirm: null });
   const debounceRef = useRef(null);
@@ -1788,7 +1881,9 @@ const Labs = () => {
         labKey: form.labKey,
         type: form.type || undefined,
         registrationNumber: form.registrationNumber || undefined,
-        contact: form.contact,
+        // Strip empty optional fields — the backend rejects "" for
+        // zoneId (ObjectId pattern) and publicEmail/privateEmail (email format).
+        contact: sanitizeContact(form.contact),
         isActive: form.isActive,
         billing: {
           feePerInvoice: Number(form.billing.feePerInvoice) || 0,
@@ -1804,6 +1899,9 @@ const Labs = () => {
           maxReferrer: Number(form.limit.maxReferrer) || 0,
           maxDoctor: Number(form.limit.maxDoctor) || 0,
           maxAdmissionSpace: Number(form.limit.maxAdmissionSpace) || 0,
+        },
+        medicalReport: {
+          padHeight: Number(form.medicalReport.padHeight) || 0,
         },
       });
       showPopup("success", "Lab registered successfully!");
@@ -2038,6 +2136,13 @@ const Labs = () => {
       />
       <LabLimitModal
         isOpen={editTarget?.section === "limit"}
+        onClose={() => setEditTarget(null)}
+        lab={editTarget?.lab}
+        onSaved={() => refreshLab(editTarget.lab._id)}
+        showPopup={showPopup}
+      />
+      <LabMedicalReportModal
+        isOpen={editTarget?.section === "medicalReport"}
         onClose={() => setEditTarget(null)}
         lab={editTarget?.lab}
         onSaved={() => refreshLab(editTarget.lab._id)}

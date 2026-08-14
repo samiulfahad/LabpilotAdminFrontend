@@ -176,10 +176,10 @@ const SchemaPicker = ({ testId, currentSchemaId, onSelect }) => {
               {selected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
             </div>
             <div className="flex-1 min-w-0">
-              <p className={`text-xs font-medium ${selected ? "text-blue-700" : "text-gray-700"}`}>{s.name}</p>
-              {s.description && <p className="text-[10.5px] text-gray-400 mt-0.5">{s.description}</p>}
+              <p className={`text-xs font-medium ${selected ? "text-blue-700" : "text-gray-700"}`}>
+                {s.description || "Untitled schema"}
+              </p>
               <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-[10px] font-mono text-gray-300">#{s._id.toString().slice(-8)}</span>
                 {s.sections?.length > 0 && (
                   <span className="text-[10px] text-gray-300">
                     {s.sections.length} section{s.sections.length !== 1 ? "s" : ""}

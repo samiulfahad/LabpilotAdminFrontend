@@ -299,7 +299,7 @@ const SchemaEngine = () => {
                   onDelete={() =>
                     setPopup({
                       type: "warning",
-                      message: `Do you want to delete the schema "${schema.name}"?`,
+                      message: "Do you want to delete this schema?",
                       _id: schema._id,
                       action: "delete",
                     })
@@ -307,7 +307,7 @@ const SchemaEngine = () => {
                   onActivate={() =>
                     setPopup({
                       type: "warning",
-                      message: `Do you want to activate the schema "${schema.name}"?`,
+                      message: "Do you want to activate this schema?",
                       _id: schema._id,
                       action: "activate",
                     })
@@ -315,7 +315,7 @@ const SchemaEngine = () => {
                   onDeactivate={() =>
                     setPopup({
                       type: "warning",
-                      message: `Do you want to deactivate the schema "${schema.name}"?`,
+                      message: "Do you want to deactivate this schema?",
                       _id: schema._id,
                       action: "deactivate",
                     })
@@ -323,7 +323,7 @@ const SchemaEngine = () => {
                   onSetDefault={() =>
                     setPopup({
                       type: "warning",
-                      message: `Do you want to set the schema "${schema.name}" as default?`,
+                      message: "Do you want to set this schema as default?",
                       _id: schema._id,
                       action: "setDefault",
                     })

@@ -30,7 +30,6 @@ import {
 
 // ─── Zustand Store ────────────────────────────────────────────────────────────
 const INITIAL_SCHEMA = {
-  name: "",
   description: "",
   testId: "",
   isActive: true,
@@ -893,7 +892,6 @@ export default function SchemaBuilder() {
   const validate = () => {
     const errs = {};
     if (!schema.testId) errs.testId = "Please select a test";
-    if (!schema.name.trim()) errs.name = "Schema name is required";
     if (!schema.description.trim()) errs.description = "Description is required";
 
     const fErrs = {};
@@ -907,7 +905,6 @@ export default function SchemaBuilder() {
   };
 
   const getOutput = () => ({
-    name: schema.name,
     description: schema.description,
     testId: schema.testId,
     isActive: schema.isActive,
@@ -986,9 +983,7 @@ export default function SchemaBuilder() {
             Schemas
           </Link>
           <ChevronRight className="w-3 h-3" />
-          <span className="text-gray-600 font-medium">
-            {schema.name || (isEditMode ? "Edit Schema" : "New Schema")}
-          </span>
+          <span className="text-gray-600 font-medium">{isEditMode ? "Edit Schema" : "New Schema"}</span>
         </div>
 
         <div className="flex items-start justify-between gap-4">
@@ -1000,23 +995,7 @@ export default function SchemaBuilder() {
               <ArrowLeft className="w-5 h-5" />
             </Link>
             <div className="flex-1 min-w-0">
-              {/* ── Inline editable schema name ── */}
-              <input
-                value={schema.name}
-                onChange={(e) => setSchemaField("name", e.target.value)}
-                placeholder={isEditMode ? "Edit schema name…" : "New schema name…"}
-                className={`w-full text-xl font-bold text-gray-900 bg-transparent border-b-2 focus:outline-none pb-0.5 transition-colors placeholder-gray-300 ${
-                  errors.name
-                    ? "border-red-400 text-red-600"
-                    : "border-transparent hover:border-gray-200 focus:border-blue-400"
-                }`}
-              />
-              {errors.name && (
-                <p className="text-xs text-red-500 mt-0.5 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3" />
-                  {errors.name}
-                </p>
-              )}
+              <p className="text-xl font-bold text-gray-900 truncate">{isEditMode ? "Edit Schema" : "New Schema"}</p>
               <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5">
                 {isEditMode && (
                   <span className="px-1.5 py-0.5 bg-blue-50 text-blue-500 rounded text-xs border border-blue-100">

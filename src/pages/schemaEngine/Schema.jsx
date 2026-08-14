@@ -41,15 +41,16 @@ const Schema = ({ input, index, onDelete, onActivate, onDeactivate, onSetDefault
           <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
             <span className="text-white font-bold text-xs">{index + 1}</span>
           </div>
-          <div className="min-w-0">
-            <h3 className="font-semibold text-gray-900 truncate flex items-center gap-2">
-              <span
-                className={`w-2 h-2 rounded-full flex-shrink-0 ${input.isActive ? "bg-emerald-500" : "bg-red-400"}`}
-                title={input.isActive ? "Active" : "Inactive"}
-              />
-              {input.name}
-            </h3>
-            {input.description && <p className="text-xs text-gray-500 mt-0.5 truncate">{input.description}</p>}
+          <div className="min-w-0 flex items-center gap-2">
+            <span
+              className={`w-2 h-2 rounded-full flex-shrink-0 ${input.isActive ? "bg-emerald-500" : "bg-red-400"}`}
+              title={input.isActive ? "Active" : "Inactive"}
+            />
+            {input.description ? (
+              <p className="text-sm text-gray-700 truncate">{input.description}</p>
+            ) : (
+              <p className="text-sm text-gray-400 italic truncate">No description</p>
+            )}
           </div>
         </div>
 

@@ -32,7 +32,6 @@ import {
 const INITIAL_SCHEMA = {
   description: "",
   testId: "",
-  isActive: true,
   hasStaticStandardRange: false,
   staticStandardRange: "",
   sections: [{ id: Date.now(), name: "Section A", showTitleInReport: true, fields: [] }],
@@ -907,7 +906,6 @@ export default function SchemaBuilder() {
   const getOutput = () => ({
     description: schema.description,
     testId: schema.testId,
-    isActive: schema.isActive,
     hasStaticStandardRange: schema.hasStaticStandardRange,
     staticStandardRange: schema.staticStandardRange,
     sections: schema.sections.map(({ id, ...sec }) => ({
@@ -1012,24 +1010,6 @@ export default function SchemaBuilder() {
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={() => setSchemaField("isActive", !schema.isActive)}
-              className={`relative flex items-center gap-2 pl-3 pr-4 py-2 rounded-xl text-xs font-semibold border transition-all ${
-                schema.isActive
-                  ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
-                  : "bg-gray-50 border-gray-200 text-gray-400 hover:bg-gray-100"
-              }`}
-            >
-              <span
-                className={`w-7 h-4 rounded-full flex-shrink-0 transition-colors relative ${schema.isActive ? "bg-emerald-400" : "bg-gray-300"}`}
-              >
-                <span
-                  className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all ${schema.isActive ? "left-3.5" : "left-0.5"}`}
-                />
-              </span>
-              {schema.isActive ? "Active" : "Inactive"}
-            </button>
-
             <button
               onClick={handleSave}
               disabled={saving || isLoading}

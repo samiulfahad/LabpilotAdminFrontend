@@ -11,9 +11,9 @@ import {
   Layers,
   Search,
   AlertCircle,
-  RefreshCw,
   ChevronDown,
   Check,
+  Star,
 } from "lucide-react";
 import Modal from "../../components/modal";
 import Popup from "../../components/popup";
@@ -95,38 +95,21 @@ const MFoot = ({ onClose, loading, label, disabled }) => (
   </div>
 );
 
-/* ─── Schema Picker ──────────────────────────────────────── */
+/* ─── No-default flag ─────────────────────────────────────── */
 
-const SchemaPicker = ({ testId, currentSchemaId, onSelect }) => {
-  const [schemas, setSchemas] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+const NoDefaultFlag = ({ compact }) => (
+  <span
+    className={`inline-flex items-center gap-1 font-semibold text-red-500 ${compact ? "text-[10px]" : "text-[10.5px] px-2 py-0.5 rounded border bg-red-50 border-red-200"}`}
+  >
+    <AlertCircle size={compact ? 10 : 11} />
+    No default schema set
+  </span>
+);
 
-  useEffect(() => {
-    if (!testId) return;
-    setLoading(true);
-    setError(false);
-    schemaService
-      .getByTestId(testId)
-      .then((r) => setSchemas(Array.isArray(r.data) ? r.data : []))
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
-  }, [testId]);
+/* ─── Schema Picker (list schemas already fetched by the parent,
+       let the user mark one as default) ─────────────────────── */
 
-  if (loading)
-    return (
-      <div className="flex items-center gap-2 px-3 py-3 rounded-md border border-gray-200 bg-gray-50">
-        <RefreshCw size={13} className="text-gray-400 animate-spin" />
-        <span className="text-xs text-gray-500">Loading schemas…</span>
-      </div>
-    );
-  if (error)
-    return (
-      <div className="flex items-center gap-2 px-3 py-3 rounded-md border border-red-200 bg-red-50">
-        <AlertCircle size={13} className="text-red-500 shrink-0" />
-        <span className="text-xs text-red-600">Failed to load schemas</span>
-      </div>
-    );
+const SchemaPicker = ({ schemas, currentDefaultSchemaId, onSetDefault }) => {
   if (schemas.length === 0)
     return (
       <div className="flex items-center gap-3 px-3 py-3 rounded-md border border-dashed border-gray-300 bg-gray-50">
@@ -135,48 +118,23 @@ const SchemaPicker = ({ testId, currentSchemaId, onSelect }) => {
         </div>
         <div>
           <p className="text-xs font-medium text-gray-600">No schemas available</p>
-          <p className="text-[10.5px] text-gray-400 mt-0.5">This test will be marked as offline</p>
+          <p className="text-[10.5px] text-gray-400 mt-0.5">Add a schema to bring this test online</p>
         </div>
       </div>
     );
 
   return (
     <div className="space-y-1.5">
-      <button
-        type="button"
-        onClick={() => onSelect(null)}
-        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md border text-left transition-colors ${!currentSchemaId ? "border-gray-400 bg-gray-100" : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50"}`}
-      >
-        <div
-          className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${!currentSchemaId ? "border-gray-700 bg-gray-700" : "border-gray-300"}`}
-        >
-          {!currentSchemaId && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-gray-700">No schema (Offline)</p>
-          <p className="text-[10.5px] text-gray-400">Remove schema assignment</p>
-        </div>
-        <span className="text-[10px] font-semibold px-2 py-0.5 rounded border bg-gray-100 text-gray-500 border-gray-200 flex items-center gap-1 shrink-0">
-          <WifiOff size={10} />
-          Offline
-        </span>
-      </button>
       {schemas.map((s) => {
-        const selected = currentSchemaId === s._id.toString();
+        const sid = s._id.toString();
+        const isDefault = currentDefaultSchemaId === sid;
         return (
-          <button
+          <div
             key={s._id}
-            type="button"
-            onClick={() => onSelect(s._id.toString())}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md border text-left transition-colors ${selected ? "border-blue-300 bg-blue-50" : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50"}`}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md border transition-colors ${isDefault ? "border-amber-300 bg-amber-50" : "border-gray-200 bg-white"}`}
           >
-            <div
-              className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${selected ? "border-blue-600 bg-blue-600" : "border-gray-300"}`}
-            >
-              {selected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-            </div>
             <div className="flex-1 min-w-0">
-              <p className={`text-xs font-medium ${selected ? "text-blue-700" : "text-gray-700"}`}>
+              <p className={`text-xs font-medium ${isDefault ? "text-amber-700" : "text-gray-700"}`}>
                 {s.description || "Untitled schema"}
               </p>
               <div className="flex items-center gap-2 mt-0.5">
@@ -185,15 +143,29 @@ const SchemaPicker = ({ testId, currentSchemaId, onSelect }) => {
                     {s.sections.length} section{s.sections.length !== 1 ? "s" : ""}
                   </span>
                 )}
+                {s.isActive === false && <span className="text-[10px] text-gray-300">Inactive</span>}
               </div>
             </div>
-            <span
-              className={`text-[10px] font-semibold px-2 py-0.5 rounded border flex items-center gap-1 shrink-0 ${selected ? "bg-blue-100 text-blue-700 border-blue-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}
-            >
-              <Wifi size={10} />
-              Online
-            </span>
-          </button>
+            {isDefault ? (
+              <button
+                type="button"
+                onClick={() => onSetDefault(null)}
+                className="text-[10px] font-semibold px-2 py-0.5 rounded border bg-amber-100 text-amber-700 border-amber-300 flex items-center gap-1 hover:bg-amber-200 transition-colors shrink-0"
+                title="Click to unset default"
+              >
+                <Star size={10} className="fill-amber-600 text-amber-600" />
+                Default
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onSetDefault(sid)}
+                className="text-[10px] font-medium px-2 py-0.5 rounded border border-gray-200 text-gray-400 hover:border-amber-300 hover:text-amber-600 hover:bg-amber-50 transition-colors shrink-0"
+              >
+                Set default
+              </button>
+            )}
+          </div>
         );
       })}
     </div>
@@ -248,18 +220,21 @@ const CategoryModal = ({ isOpen, onClose, onSave, initial, mode }) => {
   );
 };
 
-const TestModal = ({ isOpen, onClose, onSave, initial, mode, categories, defaultCategoryId }) => {
-  const [form, setForm] = useState({ name: "", categoryId: "" });
+const TestModal = ({ isOpen, onClose, onSave, initial, mode, categories, defaultCategoryId, schemas }) => {
+  const [form, setForm] = useState({ name: "", categoryId: "", defaultSchemaId: "" });
   const [loading, setLoading] = useState(false);
   const isEdit = mode === "edit";
+  const isOnline = schemas.length > 0;
+
   useEffect(() => {
     if (isOpen)
       setForm(
         initial
-          ? { name: initial.name, categoryId: initial.categoryId ?? "", schemaId: initial.schemaId ?? "" }
-          : { name: "", categoryId: defaultCategoryId ?? "" },
+          ? { name: initial.name, categoryId: initial.categoryId ?? "", defaultSchemaId: initial.defaultSchemaId ?? "" }
+          : { name: "", categoryId: defaultCategoryId ?? "", defaultSchemaId: "" },
       );
   }, [isOpen, initial, defaultCategoryId]);
+
   const submit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -267,13 +242,14 @@ const TestModal = ({ isOpen, onClose, onSave, initial, mode, categories, default
       await onSave({
         name: form.name,
         categoryId: form.categoryId,
-        ...(isEdit && { schemaId: form.schemaId?.trim() || null }),
+        ...(isEdit && { defaultSchemaId: form.defaultSchemaId?.trim() || null }),
       });
       onClose();
     } finally {
       setLoading(false);
     }
   };
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="sm">
       <form onSubmit={submit}>
@@ -307,28 +283,33 @@ const TestModal = ({ isOpen, onClose, onSave, initial, mode, categories, default
           </SelectInput>
           {isEdit && initial?._id && (
             <div>
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Schema</p>
-                <span
-                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded border text-[10px] font-semibold ${form.schemaId ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-gray-50 text-gray-400 border-gray-200"}`}
-                >
-                  {form.schemaId ? (
-                    <>
-                      <Wifi size={10} />
-                      Online
-                    </>
-                  ) : (
-                    <>
-                      <WifiOff size={10} />
-                      Offline
-                    </>
-                  )}
-                </span>
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-1.5">
+                <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                  Schemas ({schemas.length})
+                </p>
+                <div className="flex items-center gap-1.5">
+                  {isOnline && !form.defaultSchemaId && <NoDefaultFlag compact />}
+                  <span
+                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded border text-[10px] font-semibold ${isOnline ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-gray-50 text-gray-400 border-gray-200"}`}
+                  >
+                    {isOnline ? (
+                      <>
+                        <Wifi size={10} />
+                        Online
+                      </>
+                    ) : (
+                      <>
+                        <WifiOff size={10} />
+                        Offline
+                      </>
+                    )}
+                  </span>
+                </div>
               </div>
               <SchemaPicker
-                testId={initial._id}
-                currentSchemaId={form.schemaId || null}
-                onSelect={(id) => setForm((f) => ({ ...f, schemaId: id ?? "" }))}
+                schemas={schemas}
+                currentDefaultSchemaId={form.defaultSchemaId || null}
+                onSetDefault={(id) => setForm((f) => ({ ...f, defaultSchemaId: id ?? "" }))}
               />
             </div>
           )}
@@ -533,42 +514,60 @@ const StatusBadge = ({ online }) => (
 
 /* ─── Table Row ──────────────────────────────────────────── */
 
-const TestRow = ({ test, categoryName, onEdit, onDelete }) => (
-  <tr className="group border-b border-gray-100 last:border-0 hover:bg-gray-50/80 transition-colors">
-    <td className="px-4 py-3">
-      <div className="flex items-center gap-2.5">
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${test.schemaId ? "bg-emerald-500" : "bg-gray-300"}`} />
-        <span className="text-[13px] font-medium text-gray-800">{test.name}</span>
-      </div>
-    </td>
-    <td className="px-4 py-3">
-      {categoryName ? (
-        <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-600">{categoryName}</span>
-      ) : (
-        <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-amber-50 text-amber-600">Uncategorized</span>
-      )}
-    </td>
-    <td className="px-4 py-3">
-      <StatusBadge online={!!test.schemaId} />
-    </td>
-    <td className="px-4 py-3">
-      <div className="flex items-center justify-end gap-0.5 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={() => onEdit(test)}
-          className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-        >
-          <Pencil size={12} />
-        </button>
-        <button
-          onClick={() => onDelete(test)}
-          className="w-7 h-7 flex items-center justify-center rounded-md text-gray-300 hover:bg-red-50 hover:text-red-500 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-        >
-          <Trash2 size={12} />
-        </button>
-      </div>
-    </td>
-  </tr>
-);
+const TestRow = ({ test, categoryName, schemas, onEdit, onDelete }) => {
+  const online = schemas.length > 0;
+  return (
+    <tr className="group border-b border-gray-100 last:border-0 hover:bg-gray-50/80 transition-colors">
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2.5">
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${online ? "bg-emerald-500" : "bg-gray-300"}`} />
+          <span className="text-[13px] font-medium text-gray-800">{test.name}</span>
+          {online &&
+            (test.defaultSchemaId ? (
+              <Star size={11} className="fill-amber-500 text-amber-500 shrink-0" title="Default schema set" />
+            ) : (
+              <AlertCircle size={11} className="text-red-400 shrink-0" title="No default schema set" />
+            ))}
+        </div>
+      </td>
+      <td className="px-4 py-3">
+        {categoryName ? (
+          <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-600">{categoryName}</span>
+        ) : (
+          <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-amber-50 text-amber-600">Uncategorized</span>
+        )}
+      </td>
+      <td className="px-4 py-3">
+        {!online ? (
+          <StatusBadge online={false} />
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <StatusBadge online={true} />
+            <span className="text-[10px] text-gray-400">
+              {schemas.length} schema{schemas.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+        )}
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center justify-end gap-0.5 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={() => onEdit(test)}
+            className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          >
+            <Pencil size={12} />
+          </button>
+          <button
+            onClick={() => onDelete(test)}
+            className="w-7 h-7 flex items-center justify-center rounded-md text-gray-300 hover:bg-red-50 hover:text-red-500 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+};
 
 const SkeletonRow = () => (
   <tr className="border-b border-gray-100 last:border-0">
@@ -590,6 +589,7 @@ const SkeletonRow = () => (
 const TestCatalog = () => {
   const [categories, setCategories] = useState([]);
   const [tests, setTests] = useState([]);
+  const [schemas, setSchemas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeCatId, setActiveCatId] = useState("__all__");
@@ -603,9 +603,14 @@ const TestCatalog = () => {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [cRes, tRes] = await Promise.all([categoryService.getAll(), testService.getAll()]);
+      const [cRes, tRes, sRes] = await Promise.all([
+        categoryService.getAll(),
+        testService.getAll(),
+        schemaService.getAll(),
+      ]);
       setCategories(Array.isArray(cRes.data) ? cRes.data : (cRes.data?.data ?? []));
       setTests(Array.isArray(tRes.data) ? tRes.data : (tRes.data?.data ?? []));
+      setSchemas(Array.isArray(sRes.data) ? sRes.data : (sRes.data?.data ?? []));
     } catch {
       showPopup("error", "Failed to load catalog.");
     } finally {
@@ -620,6 +625,16 @@ const TestCatalog = () => {
   const catIds = new Set(categories.map((c) => c._id));
   const catNameById = Object.fromEntries(categories.map((c) => [c._id, c.name]));
 
+  // Schemas grouped by the test they belong to — a test is "online" solely
+  // by having at least one entry here, not by any field on the test doc.
+  const schemasByTestId = schemas.reduce((acc, s) => {
+    const tid = s.testId?.toString ? s.testId.toString() : s.testId;
+    if (!tid) return acc;
+    (acc[tid] ??= []).push(s);
+    return acc;
+  }, {});
+  const schemasFor = (testId) => schemasByTestId[testId] ?? [];
+
   const baseTests =
     activeCatId === "__all__"
       ? tests
@@ -630,7 +645,7 @@ const TestCatalog = () => {
   const q = search.trim().toLowerCase();
   const visibleTests = q ? baseTests.filter((t) => t.name.toLowerCase().includes(q)) : baseTests;
 
-  const totalOnline = tests.filter((t) => !!t.schemaId).length;
+  const totalOnline = tests.filter((t) => schemasFor(t._id).length > 0).length;
   const totalOffline = tests.length - totalOnline;
   const uncategorized = tests.filter((t) => !t.categoryId || !catIds.has(t.categoryId));
 
@@ -813,7 +828,7 @@ const TestCatalog = () => {
                 <tr className="text-left text-[10.5px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-200">
                   <th className="px-4 py-2.5 font-semibold">Test Name</th>
                   <th className="px-4 py-2.5 font-semibold">Category</th>
-                  <th className="px-4 py-2.5 font-semibold">Schema</th>
+                  <th className="px-4 py-2.5 font-semibold">Schemas</th>
                   <th className="px-4 py-2.5 w-20" />
                 </tr>
               </thead>
@@ -855,6 +870,7 @@ const TestCatalog = () => {
                       key={t._id}
                       test={t}
                       categoryName={catNameById[t.categoryId]}
+                      schemas={schemasFor(t._id)}
                       onEdit={(t) => setTestM({ open: true, mode: "edit", initial: t, defaultCategoryId: null })}
                       onDelete={deleteTest}
                     />
@@ -881,6 +897,7 @@ const TestCatalog = () => {
         mode={testM.mode}
         categories={categories}
         defaultCategoryId={testM.defaultCategoryId}
+        schemas={testM.initial ? schemasFor(testM.initial._id) : []}
       />
 
       {popup.open && (

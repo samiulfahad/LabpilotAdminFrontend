@@ -20,7 +20,6 @@ const SchemaEngine = () => {
       setLoading(true);
       const response = await testService.getAll();
       setTests(response.data || []);
-      console.log(response.data);
     } catch (error) {
       console.error("Error fetching tests:", error);
       setPopup({ type: "error", message: "Failed to load tests" });
@@ -75,69 +74,27 @@ const SchemaEngine = () => {
       setPopup({ type: "success", message: "Schema deleted successfully" });
     } catch (error) {
       console.error("Error deleting schema:", error);
-      setPopup({ type: "error", message: "Failed to delete schema" });
+      setPopup({ type: "error", message: error.response?.data?.message || "Failed to delete schema" });
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle schema activation
-  const handleActivate = async () => {
-    try {
-      setLoading(true);
-      await schemaService.activate(popup._id);
-      // Update the local state to reflect the activation
-      setSchemas((prev) => prev.map((schema) => (schema._id === popup._id ? { ...schema, isActive: true } : schema)));
-      setPopup({ type: "success", message: "Schema activated successfully" });
-    } catch (error) {
-      console.error("Error activating schema:", error);
-      setPopup({ type: "error", message: "Failed to activate schema" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handle schema deactivation
-  const handleDeactivate = async () => {
-    try {
-      console.log(popup._id);
-      setLoading(true);
-      await schemaService.deactivate(popup._id);
-      // Update the local state to reflect the deactivation
-      setSchemas((prev) => prev.map((schema) => (schema._id === popup._id ? { ...schema, isActive: false } : schema)));
-      setPopup({ type: "success", message: "Schema deactivated successfully" });
-    } catch (error) {
-      console.error("Error deactivating schema:", error);
-      setPopup({ type: "error", message: "Failed to deactivate schema" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handle setting schema as default
+  // Handle setting a schema as its test's default
   const handleSetDefault = async () => {
     try {
       setLoading(true);
-      // First, deactivate all other schemas (assuming only one can be default/active at a time)
-      // If your backend handles this differently, adjust accordingly
-      await Promise.all(
-        schemas.map((schema) =>
-          schema._id !== popup._id && schema.isActive ? schemaService.deactivate(schema._id) : Promise.resolve(),
+      const target = schemas.find((schema) => schema._id === popup._id);
+      await schemaService.setDefault(popup._id);
+      setSchemas((prev) =>
+        prev.map((schema) =>
+          schema.testId === target?.testId ? { ...schema, isDefault: schema._id === popup._id } : schema,
         ),
       );
-      // Then activate the selected schema
-      await schemaService.activate(popup._id);
-      // Update all schemas in local state
-      setSchemas((prev) =>
-        prev.map((schema) => ({
-          ...schema,
-          isActive: schema._id === popup._id,
-        })),
-      );
-      setPopup({ type: "success", message: "Schema set as default successfully" });
+      setPopup({ type: "success", message: "Default schema updated" });
     } catch (error) {
       console.error("Error setting default schema:", error);
-      setPopup({ type: "error", message: "Failed to set schema as default" });
+      setPopup({ type: "error", message: error.response?.data?.message || "Failed to set default schema" });
     } finally {
       setLoading(false);
     }
@@ -181,15 +138,7 @@ const SchemaEngine = () => {
       {popup.type === "warning" && popup.action === "delete" && (
         <Popup type={popup.type} message={popup.message} onClose={() => setPopup({})} onConfirm={handleDelete} />
       )}
-      {/* Popup for activate warning */}
-      {popup.type === "warning" && popup.action === "activate" && (
-        <Popup type={popup.type} message={popup.message} onClose={() => setPopup({})} onConfirm={handleActivate} />
-      )}
-      {/* Popup for deactivate warning */}
-      {popup.type === "warning" && popup.action === "deactivate" && (
-        <Popup type={popup.type} message={popup.message} onClose={() => setPopup({})} onConfirm={handleDeactivate} />
-      )}
-      {/* Popup for set default warning */}
+      {/* Popup for set-default warning */}
       {popup.type === "warning" && popup.action === "setDefault" && (
         <Popup type={popup.type} message={popup.message} onClose={() => setPopup({})} onConfirm={handleSetDefault} />
       )}
@@ -304,26 +253,10 @@ const SchemaEngine = () => {
                       action: "delete",
                     })
                   }
-                  onActivate={() =>
-                    setPopup({
-                      type: "warning",
-                      message: "Do you want to activate this schema?",
-                      _id: schema._id,
-                      action: "activate",
-                    })
-                  }
-                  onDeactivate={() =>
-                    setPopup({
-                      type: "warning",
-                      message: "Do you want to deactivate this schema?",
-                      _id: schema._id,
-                      action: "deactivate",
-                    })
-                  }
                   onSetDefault={() =>
                     setPopup({
                       type: "warning",
-                      message: "Do you want to set this schema as default?",
+                      message: "Set this schema as the default for its test?",
                       _id: schema._id,
                       action: "setDefault",
                     })

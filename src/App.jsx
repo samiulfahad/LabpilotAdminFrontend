@@ -17,6 +17,7 @@ import ReportDownload from "./pages/reportDownload";
 import AdminBilling from "./pages/billing";
 import ManageSupportAdmins from "./pages/supportAdmin";
 import LabStaff from "./pages/labStaff";
+import SupportInbox from "./pages/supportInbox";
 
 // ─── Route Wrapper for Protected Pages ──────────────────────────────────────
 const ProtectedRoutes = () => {
@@ -66,8 +67,8 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/account" element={<Account />} />
         <Route path="/labs" element={<Labs />} />
-        <Route path="/lab-staffs" element={<LabStaff/> } />
-        <Route path="/support-admin" element={<ManageSupportAdmins/> } />
+        <Route path="/lab-staffs" element={<LabStaff />} />
+        <Route path="/support-admin" element={<ManageSupportAdmins />} />
         <Route path="/lab-management" element={<LabManagement />} />
         <Route path="/billing" element={<AdminBilling />} />
         <Route path="/test-catalog" element={<TestCatalog />} />
@@ -76,6 +77,7 @@ function App() {
         <Route path="/schema-builder/:schemaId" element={<SchemaBuilder />} />
         <Route path="/schema-renderer/:schemaId" element={<ReportUpload />} />
         <Route path="/report/:schemaId" element={<ReportDownload />} />
+        <Route path="/support-inbox" element={<SupportInbox />} />
         <Route path="/zones" element={<Zones />} />
       </Route>
 

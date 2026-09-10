@@ -1,3 +1,4 @@
+// SchemaRenderer.jsx
 import { useState, useEffect } from "react";
 import {
   CheckCircle2,
@@ -16,6 +17,96 @@ import {
   Tag,
 } from "lucide-react";
 
+// ─── Age Helpers (mirrors SchemaBuilder) ──────────────────────────────────
+const emptyAge = () => ({ years: "", months: "", days: "" });
+const AGE_NO_LIMIT = { years: 150, months: 11, days: 31 };
+const isAgeNoLimit = (age) =>
+  !!age && Number(age.years) === 150 && Number(age.months) === 11 && Number(age.days) === 31;
+
+function hasAge(age) {
+  return !!age && age.years !== "" && age.years !== undefined && age.years !== null;
+}
+
+function ageToValue(age) {
+  if (!age || typeof age !== "object") return null;
+  const y = Number(age.years) || 0;
+  const m = Number(age.months) || 0;
+  const d = Number(age.days) || 0;
+  return y * 365 + m * 30 + d;
+}
+
+function formatAge(age) {
+  if (!age) return "—";
+  if (isAgeNoLimit(age)) return "∞";
+  const y = age.years === "" || age.years === undefined ? 0 : Number(age.years);
+  const m = age.months === "" || age.months === undefined ? 0 : Number(age.months);
+  const d = age.days === "" || age.days === undefined ? 0 : Number(age.days);
+  const parts = [`${y}y`];
+  if (m) parts.push(`${m}m`);
+  if (d) parts.push(`${d}d`);
+  return parts.join(" ");
+}
+
+function AgeInputGroup({ value, onChange, isMax }) {
+  const val = value || {};
+  const displayAsEmpty = isMax && isAgeNoLimit(val);
+
+  const setPart = (key, max) => (e) => {
+    const raw = e.target.value;
+    if (raw === "") {
+      onChange({ ...val, [key]: "" });
+      return;
+    }
+    const num = Math.max(0, Math.min(max, Number(raw)));
+    onChange({ ...val, [key]: num });
+  };
+
+  const handleYearsBlur = () => {
+    if (isMax && (val.years === "" || val.years === undefined || val.years === null)) {
+      onChange({ ...AGE_NO_LIMIT });
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        type="number"
+        min={0}
+        max={150}
+        placeholder={isMax ? "∞" : "Y"}
+        title="Years"
+        value={displayAsEmpty ? "" : (val.years ?? "")}
+        onChange={setPart("years", 150)}
+        onBlur={isMax ? handleYearsBlur : undefined}
+        className="w-12 px-1.5 py-1.5 border border-gray-200 rounded-md text-xs text-center focus:outline-none focus:ring-1 focus:ring-blue-300"
+      />
+      <span className="text-[10px] text-gray-300">y</span>
+      <input
+        type="number"
+        min={0}
+        max={11}
+        placeholder="M"
+        title="Months"
+        value={displayAsEmpty ? "" : (val.months ?? "")}
+        onChange={setPart("months", 11)}
+        className="w-10 px-1.5 py-1.5 border border-gray-200 rounded-md text-xs text-center focus:outline-none focus:ring-1 focus:ring-blue-300"
+      />
+      <span className="text-[10px] text-gray-300">m</span>
+      <input
+        type="number"
+        min={0}
+        max={31}
+        placeholder="D"
+        title="Days"
+        value={displayAsEmpty ? "" : (val.days ?? "")}
+        onChange={setPart("days", 31)}
+        className="w-10 px-1.5 py-1.5 border border-gray-200 rounded-md text-xs text-center focus:outline-none focus:ring-1 focus:ring-blue-300"
+      />
+      <span className="text-[10px] text-gray-300">d</span>
+    </div>
+  );
+}
+
 // ─── Range Logic ──────────────────────────────────────────────────────────────
 export function getStandardRangeInfo(field, patientAge, patientGender) {
   const sr = field.standardRange;
@@ -26,19 +117,19 @@ export function getStandardRangeInfo(field, patientAge, patientGender) {
     if (sr.type === "simple" && sr.data) {
       return { mode, min: parseFloat(sr.data.min), max: parseFloat(sr.data.max) };
     }
-    if (sr.type === "age" && patientAge && Array.isArray(sr.data)) {
-      const age = parseFloat(patientAge);
-      const row = sr.data.find((r) => age >= parseFloat(r.minAge) && age <= parseFloat(r.maxAge));
+    if (sr.type === "age" && hasAge(patientAge) && Array.isArray(sr.data)) {
+      const ageVal = ageToValue(patientAge);
+      const row = sr.data.find((r) => ageVal >= ageToValue(r.minAge) && ageVal <= ageToValue(r.maxAge));
       if (row) return { mode, min: parseFloat(row.minValue), max: parseFloat(row.maxValue) };
     }
     if (sr.type === "gender" && patientGender && sr.data) {
       const g = sr.data[patientGender];
       if (g) return { mode, min: parseFloat(g.min), max: parseFloat(g.max) };
     }
-    if (sr.type === "combined" && patientAge && patientGender && Array.isArray(sr.data)) {
-      const age = parseFloat(patientAge);
+    if (sr.type === "combined" && hasAge(patientAge) && patientGender && Array.isArray(sr.data)) {
+      const ageVal = ageToValue(patientAge);
       const row = sr.data.find(
-        (r) => r.gender === patientGender && age >= parseFloat(r.minAge) && age <= parseFloat(r.maxAge),
+        (r) => r.gender === patientGender && ageVal >= ageToValue(r.minAge) && ageVal <= ageToValue(r.maxAge),
       );
       if (row) return { mode, min: parseFloat(row.minValue), max: parseFloat(row.maxValue) };
     }
@@ -48,16 +139,16 @@ export function getStandardRangeInfo(field, patientAge, patientGender) {
   let tiers = [];
   if (sr.type === "simple" && Array.isArray(sr.data)) {
     tiers = sr.data;
-  } else if (sr.type === "age" && patientAge && Array.isArray(sr.data)) {
-    const age = parseFloat(patientAge);
-    const bracket = sr.data.find((b) => age >= parseFloat(b.minAge) && age <= parseFloat(b.maxAge));
+  } else if (sr.type === "age" && hasAge(patientAge) && Array.isArray(sr.data)) {
+    const ageVal = ageToValue(patientAge);
+    const bracket = sr.data.find((b) => ageVal >= ageToValue(b.minAge) && ageVal <= ageToValue(b.maxAge));
     tiers = bracket?.tiers || [];
   } else if (sr.type === "gender" && patientGender && sr.data) {
     tiers = sr.data[patientGender] || [];
-  } else if (sr.type === "combined" && patientAge && patientGender && Array.isArray(sr.data)) {
-    const age = parseFloat(patientAge);
+  } else if (sr.type === "combined" && hasAge(patientAge) && patientGender && Array.isArray(sr.data)) {
+    const ageVal = ageToValue(patientAge);
     const bracket = sr.data.find(
-      (b) => b.gender === patientGender && age >= parseFloat(b.minAge) && age <= parseFloat(b.maxAge),
+      (b) => b.gender === patientGender && ageVal >= ageToValue(b.minAge) && ageVal <= ageToValue(b.maxAge),
     );
     tiers = bracket?.tiers || [];
   }
@@ -148,25 +239,24 @@ export function getReferenceValue(field, patientAge, patientGender) {
   const rv = field.referenceValue;
   if (!rv || rv.type === "none") return null;
   if (rv.type === "simple") return rv.data?.value || null;
-  if (rv.type === "age" && patientAge && Array.isArray(rv.data)) {
-    const age = parseFloat(patientAge);
-    const row = rv.data.find((r) => age >= parseFloat(r.minAge) && age <= parseFloat(r.maxAge));
+  if (rv.type === "age" && hasAge(patientAge) && Array.isArray(rv.data)) {
+    const ageVal = ageToValue(patientAge);
+    const row = rv.data.find((r) => ageVal >= ageToValue(r.minAge) && ageVal <= ageToValue(r.maxAge));
     return row?.value || null;
   }
   if (rv.type === "gender" && patientGender && rv.data) {
     return rv.data[patientGender]?.value || null;
   }
-  if (rv.type === "combined" && patientAge && patientGender && Array.isArray(rv.data)) {
-    const age = parseFloat(patientAge);
+  if (rv.type === "combined" && hasAge(patientAge) && patientGender && Array.isArray(rv.data)) {
+    const ageVal = ageToValue(patientAge);
     const row = rv.data.find(
-      (r) => r.gender === patientGender && age >= parseFloat(r.minAge) && age <= parseFloat(r.maxAge),
+      (r) => r.gender === patientGender && ageVal >= ageToValue(r.minAge) && ageVal <= ageToValue(r.maxAge),
     );
     return row?.value || null;
   }
   return null;
 }
 
-// Hydrates form `values` state from a previously-saved report payload.
 export function hydrateValuesFromReport(schema, existingReport) {
   if (!existingReport || !schema?.sections) return {};
   const values = {};
@@ -215,7 +305,7 @@ function RangeTooltip({ field }) {
             Array.isArray(sr.data) &&
             sr.data.map((r, i) => (
               <div key={i} className="text-gray-400 leading-7 font-mono text-[10.5px]">
-                Age {r.minAge}–{r.maxAge === 999 ? "∞" : r.maxAge}:{" "}
+                Age {formatAge(r.minAge)}–{formatAge(r.maxAge)}:{" "}
                 <span className="text-gray-200 font-medium">
                   {r.minValue}–{r.maxValue}
                 </span>
@@ -237,7 +327,7 @@ function RangeTooltip({ field }) {
             Array.isArray(sr.data) &&
             sr.data.map((r, i) => (
               <div key={i} className="text-gray-400 leading-7 font-mono text-[10.5px] capitalize">
-                {r.gender} {r.minAge}–{r.maxAge === 999 ? "∞" : r.maxAge}yr:{" "}
+                {r.gender} {formatAge(r.minAge)}–{formatAge(r.maxAge)}:{" "}
                 <span className="text-gray-200 font-medium">
                   {r.minValue}–{r.maxValue}
                 </span>
@@ -258,7 +348,7 @@ function RangeTooltip({ field }) {
             sr.data.map((b, i) => (
               <div key={i}>
                 <div className="text-gray-500 text-[9px] uppercase tracking-wide mt-1.5 mb-0.5">
-                  Age {b.minAge}–{b.maxAge === 999 ? "∞" : b.maxAge}
+                  Age {formatAge(b.minAge)}–{formatAge(b.maxAge)}
                 </div>
                 {(b.tiers || []).map((t, j) => (
                   <div key={j} className="text-gray-400 leading-7 font-mono text-[10.5px]">
@@ -286,7 +376,7 @@ function RangeTooltip({ field }) {
             sr.data.map((b, i) => (
               <div key={i}>
                 <div className="text-gray-500 text-[9px] uppercase tracking-wide mt-1.5 mb-0.5 capitalize">
-                  {b.gender}, {b.minAge}–{b.maxAge === 999 ? "∞" : b.maxAge}yr
+                  {b.gender}, {formatAge(b.minAge)}–{formatAge(b.maxAge)}
                 </div>
                 {(b.tiers || []).map((t, j) => (
                   <div key={j} className="text-gray-400 leading-7 font-mono text-[10.5px]">
@@ -327,13 +417,7 @@ function PatientForm({ patient, onChange }) {
         </div>
         <div className="p-3.5 px-4.5 border-r-0 sm:border-r border-gray-200">
           <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 block">Age</label>
-          <input
-            className="w-full bg-transparent border-0 outline-none text-sm font-semibold text-gray-900"
-            type="number"
-            placeholder="Years"
-            value={patient.age}
-            onChange={(e) => onChange("age", e.target.value)}
-          />
+          <AgeInputGroup value={patient.age} onChange={(v) => onChange("age", v)} />
         </div>
         <div className="p-3.5 px-4.5">
           <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 block">
@@ -384,10 +468,7 @@ function PatientForm({ patient, onChange }) {
   );
 }
 
-// ─── Shared Row Layout: Parameter | Result | Ref ──────────────────────────────
-// Every field type renders through this so the three columns line up
-// consistently: the parameter name, the value the user enters, and (only
-// when the schema defines one) the reference range/value/tag for it.
+// ─── Shared Row Layout ─────────────────────────────────────────────────────
 
 function FieldRow({ field, control, refNode, error }) {
   return (
@@ -503,8 +584,9 @@ function NumberField({ field, value, onChange, error, patientAge, patientGender 
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Enter result"
-        className="w-full bg-transparent border-0 outline-none font-mono text-sm font-medium text-gray-900 py-2.5 px-3"
-        style={{ paddingRight: field.unit ? "56px" : "12px" }}
+        className={`w-full bg-transparent border-0 outline-none font-mono text-sm font-medium text-gray-900 py-2.5 pl-3 ${
+          field.unit ? "pr-14" : "pr-3"
+        }`}
       />
       {field.unit && (
         <span className="absolute right-0 top-0 h-full px-2.5 flex items-center bg-gray-100 border-l border-gray-200 rounded-r-lg font-mono text-[10px] font-medium text-gray-600 uppercase tracking-wide pointer-events-none">
@@ -824,10 +906,6 @@ function SectionPanel({ section, sectionIndex, values, onChange, errors, patient
     </div>
   );
 
-  // NOTE: `section.showTitleInReport` only controls whether the section
-  // heading appears in the *generated report*. It must never hide this
-  // interactive header, since that's the only way to collapse/expand a
-  // section and see its fill/error state while actually entering data.
   return (
     <div
       className={`bg-white border rounded-xl overflow-visible shadow-sm transition-shadow hover:shadow-md ${hasError ? "border-red-600/40" : "border-gray-200"}`}
@@ -863,7 +941,7 @@ function SectionPanel({ section, sectionIndex, values, onChange, errors, patient
         />
       </button>
       <div className="h-0.5 bg-white/[0.06]">
-        <div className="h-full bg-blue-600 transition-all duration-500" style={{ width: `${pct}%` }} />
+        <div className="h-full bg-blue-600 transition-all duration-500 w-[var(--pct)]" style={{ "--pct": `${pct}%` }} />
       </div>
       {!collapsed && rows}
     </div>
@@ -920,7 +998,7 @@ function buildPayload(schema, values, patient) {
 function SchemaRenderer({ schema, onSubmit, loading = false }) {
   const [patient, setPatient] = useState({
     patientName: "",
-    age: "",
+    age: emptyAge(),
     gender: "",
     sampleCollectionDate: "",
     reportDate: "",
@@ -968,7 +1046,7 @@ function SchemaRenderer({ schema, onSubmit, loading = false }) {
 
   const handleReset = () => {
     setValues({});
-    setPatient({ patientName: "", age: "", gender: "", sampleCollectionDate: "", reportDate: "" });
+    setPatient({ patientName: "", age: emptyAge(), gender: "", sampleCollectionDate: "", reportDate: "" });
     setErrors({});
   };
 
@@ -1011,7 +1089,6 @@ function SchemaRenderer({ schema, onSubmit, loading = false }) {
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
       <div className="max-w-[1600px] mx-auto py-7 px-5 pb-14">
-        {/* Header card */}
         <div className="bg-white border border-gray-200 rounded-2xl p-6 mb-4 shadow-sm">
           <div className="flex items-start gap-4 mb-5">
             <div className="w-11 h-11 rounded-lg bg-gray-900 flex items-center justify-center flex-shrink-0">
@@ -1071,17 +1148,16 @@ function SchemaRenderer({ schema, onSubmit, loading = false }) {
               </div>
               <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all duration-500 ${
+                  className={`h-full rounded-full transition-all duration-500 w-[var(--pct)] ${
                     progress === 100 ? "bg-emerald-600" : "bg-gradient-to-r from-blue-600 to-cyan-600"
                   }`}
-                  style={{ width: `${progress}%` }}
+                  style={{ "--pct": `${progress}%` }}
                 />
               </div>
             </div>
           )}
         </div>
 
-        {/* Abnormal alert */}
         {abnormalCount > 0 && (
           <div className="flex items-start gap-3 py-3 px-4 rounded-lg border-l-[3px] border-orange-600 bg-orange-50 mb-3">
             <AlertTriangle className="w-4 h-4 text-orange-600 flex-shrink-0 mt-0.5" />
@@ -1097,10 +1173,8 @@ function SchemaRenderer({ schema, onSubmit, loading = false }) {
           </div>
         )}
 
-        {/* Patient form */}
         <PatientForm patient={patient} onChange={handlePatientChange} />
 
-        {/* Sections */}
         <div className="flex flex-col gap-2.5 mb-4">
           {schema.sections.map((section, si) => (
             <SectionPanel
@@ -1116,7 +1190,6 @@ function SchemaRenderer({ schema, onSubmit, loading = false }) {
           ))}
         </div>
 
-        {/* Static range note */}
         {schema.hasStaticStandardRange && schema.staticStandardRange && (
           <div className="flex items-start gap-3 py-3 px-4 rounded-lg border-l-[3px] border-orange-600 bg-orange-50 mb-3">
             <Info className="w-[15px] h-[15px] text-orange-600 flex-shrink-0 mt-0.5" />
@@ -1129,7 +1202,6 @@ function SchemaRenderer({ schema, onSubmit, loading = false }) {
           </div>
         )}
 
-        {/* Validation errors */}
         {Object.keys(errors).length > 0 && (
           <div className="flex items-start gap-3 py-3 px-4 rounded-lg border-l-[3px] border-red-600 bg-red-50 mb-3">
             <XCircle className="w-[15px] h-[15px] text-red-600 flex-shrink-0 mt-0.5" />
@@ -1143,7 +1215,6 @@ function SchemaRenderer({ schema, onSubmit, loading = false }) {
           </div>
         )}
 
-        {/* Action bar */}
         <div className="flex items-center justify-between flex-wrap gap-3 py-4 px-5 bg-white border border-gray-200 rounded-xl shadow-sm">
           <div className="flex items-center gap-1.5 text-gray-400">
             <ShieldCheck className="w-3.5 h-3.5" />

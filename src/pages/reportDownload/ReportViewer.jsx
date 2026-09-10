@@ -1,3 +1,4 @@
+// ReportViewer.jsx
 import { useState } from "react";
 import { pdf } from "@react-pdf/renderer";
 import {
@@ -33,7 +34,6 @@ const LAB_INFO = {
   regNo: "DGDA/LAB/2024/0042",
 };
 
-// Empty patient fallback — all fields blank, nothing hardcoded
 const EMPTY_PATIENT = {
   name: "",
   age: "",
@@ -44,15 +44,8 @@ const EMPTY_PATIENT = {
   reportDate: "",
 };
 
-// ── Keys inside report that are metadata, not sections ────────────────────────
 const REPORT_META_KEYS = new Set(["_id", "name", "reportDate", "sampleCollectionDate"]);
 
-// ── Status resolution ──────────────────────────────────────────────────────
-// Number fields carry ONE of two reference sources, set by SchemaRenderer's
-// buildPayload() depending on the field's standardRange.mode:
-//   - "range"  mode -> entry.referenceRange = "min–max" (numeric)
-//   - "tagged" mode -> entry.referenceTag   = tier label (e.g. "Low", "Turbid")
-// Both must be checked — a tagged field has no referenceRange at all.
 function parseRange(ref) {
   if (!ref) return null;
   const m = ref.match(/^([\d.]+)\s*[–\-]\s*([\d.]+)$/);
@@ -60,9 +53,6 @@ function parseRange(ref) {
   return { min: parseFloat(m[1]), max: parseFloat(m[2]) };
 }
 
-// Tagged tiers store a free-text label instead of a numeric range. Map the
-// common ones onto the same low/high/normal vocabulary the range mode uses;
-// anything else (custom tier names) falls back to a neutral "tag" status.
 function statusFromTag(tag) {
   const label = (tag || "").toLowerCase();
   if (/low/.test(label)) return "low";
@@ -83,10 +73,6 @@ function getStatus(field) {
   return "normal";
 }
 
-// A field "has status" only when it's a number field with a numeric range or
-// a tagged tier — that's the only case with a low/normal/high verdict to
-// show. Every other field type (text, textarea, select, radio, checkbox)
-// still gets its own Parameter | Result | Ref row — it just has no status.
 function hasEvaluableStatus(field) {
   return Boolean(field?.referenceRange) || Boolean(field?.referenceTag);
 }
@@ -95,10 +81,6 @@ function getSectionEntries(sectionData) {
   return Object.entries(sectionData).filter(([key]) => key !== "__showTitle");
 }
 
-// Every field in a section — number, text, textarea, select, radio, checkbox
-// — renders through this so Parameter, Result, Unit, Ref and Status always
-// line up in the same five columns, whether or not a given field actually
-// has a unit, a range, or a status to show.
 function getRefDisplay(field) {
   return field.referenceRange || field.referenceTag || field.referenceValue || "";
 }
@@ -124,9 +106,6 @@ function StatusPill({ status, label }) {
   );
 }
 
-// A single row for one field, of any type — number, text, textarea, select,
-// radio, or checkbox. Always renders Parameter | Result | (Unit) | Ref |
-// Status in that order; Status is blank for fields with no evaluable range.
 function ParamRow({ name, field, hasUnits }) {
   const value = formatValue(field);
   const unit = field.unit || "";
@@ -286,22 +265,32 @@ function PatientGrid({ patient }) {
   );
 }
 
-// ── Print HTML builder ────────────────────────────────────────────────────────
+// ── Tailwind class maps for the generated print document ───────────────────
+// (mirrors the app's own Tailwind palette — the print doc loads Tailwind
+// via the Play CDN so these classes render identically to the app.)
+const STATUS_CLASSES = {
+  normal: { text: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-600/25", label: "Normal" },
+  low: { text: "text-amber-600", bg: "bg-amber-50", border: "border-amber-600/25", label: "↓ Low" },
+  high: { text: "text-red-600", bg: "bg-red-50", border: "border-red-600/25", label: "↑ High" },
+  tag: { text: "text-violet-600", bg: "bg-violet-50", border: "border-violet-600/25", label: null },
+};
+
+// ── Print HTML builder — Tailwind (via Play CDN) for all visual styling.
+// The only two rules that cannot be expressed as a class (@page, and
+// -webkit-print-color-adjust, neither of which attaches to an element) are
+// kept in a two-line <style> block; everything else below is Tailwind.
 function buildPrintHTML({ reportName, shortId, patient, labInfo, sections, printType }) {
   const isPad = printType === "PAD";
-
-  const statusLabel = (st, field) =>
-    st === "tag" ? field?.referenceTag || "—" : { normal: "Normal", low: "↓ Low", high: "↑ High" }[st] || "—";
-  const statusColor = (st) => ({ normal: "#059669", low: "#d97706", high: "#dc2626", tag: "#7c3aed" })[st] || "#94a3b8";
-  const statusBg = (st) => ({ normal: "#f0fdf4", low: "#fffbeb", high: "#fef2f2", tag: "#f5f3ff" })[st] || "white";
 
   const renderSection = (sectionName, sectionData, index) => {
     const showHeader = sectionData.__showTitle !== false;
     const entries = getSectionEntries(sectionData);
     const hasUnits = entries.some(([, v]) => Boolean(v.unit));
+
     const unitHeader = hasUnits
-      ? `<th style="padding:5px 12px;text-align:left;font-size:9px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;width:12%;">Unit</th>`
+      ? `<th class="py-[5px] px-3 text-left text-[9px] font-bold text-gray-500 uppercase tracking-[0.05em] w-[12%]">Unit</th>`
       : "";
+
     const rows = entries
       .map(([name, field]) => {
         const value = formatValue(field);
@@ -309,19 +298,45 @@ function buildPrintHTML({ reportName, shortId, patient, labInfo, sections, print
         const ref = getRefDisplay(field);
         const status = hasEvaluableStatus(field) ? getStatus(field) : null;
         const isAb = status === "low" || status === "high";
-        return `<tr style="background:${isAb ? "#fff1f2" : "white"};">
-        <td style="padding:7px 12px;font-size:12px;color:#374151;border-bottom:1px solid #f1f5f9;">${name}</td>
-        <td style="padding:7px 12px;font-size:12px;font-weight:700;color:${isAb ? "#b91c1c" : "#111827"};border-bottom:1px solid #f1f5f9;">${value || "—"}</td>
-        ${hasUnits ? `<td style="padding:7px 12px;font-size:10px;font-weight:600;color:#64748b;text-transform:uppercase;border-bottom:1px solid #f1f5f9;">${unit || "—"}</td>` : ""}
-        <td style="padding:7px 12px;font-size:11px;color:#6b7280;border-bottom:1px solid #f1f5f9;">${ref || "—"}</td>
-        <td style="padding:7px 12px;border-bottom:1px solid #f1f5f9;">${status ? `<span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:99px;border:1px solid;background:${statusBg(status)};color:${statusColor(status)};border-color:${statusColor(status)}40;">${statusLabel(status, field)}</span>` : `<span style="font-size:11px;color:#cbd5e1;">—</span>`}</td>
+        const cfg = status ? STATUS_CLASSES[status] : null;
+        const pillLabel = status === "tag" ? field.referenceTag || "—" : cfg?.label;
+        return `<tr class="${isAb ? "bg-rose-50" : "bg-white"}">
+        <td class="py-[7px] px-3 text-xs text-gray-700 border-b border-slate-100">${name}</td>
+        <td class="py-[7px] px-3 text-xs font-bold ${isAb ? "text-red-700" : "text-gray-900"} border-b border-slate-100">${value || "—"}</td>
+        ${hasUnits ? `<td class="py-[7px] px-3 text-[10px] font-semibold text-slate-500 uppercase border-b border-slate-100">${unit || "—"}</td>` : ""}
+        <td class="py-[7px] px-3 text-[11px] text-gray-500 border-b border-slate-100">${ref || "—"}</td>
+        <td class="py-[7px] px-3 border-b border-slate-100">${
+          status
+            ? `<span class="text-[9px] font-bold py-0.5 px-[7px] rounded-full border ${cfg.bg} ${cfg.text} ${cfg.border}">${pillLabel}</span>`
+            : `<span class="text-[11px] text-slate-300">—</span>`
+        }</td>
       </tr>`;
       })
       .join("");
+
     const headerHTML = showHeader
-      ? `<div style="background:#334155;padding:8px 14px;display:flex;align-items:center;gap:8px;"><span style="width:20px;height:20px;background:rgba(255,255,255,0.15);border-radius:4px;display:inline-flex;align-items:center;justify-content:center;color:white;font-size:9px;font-weight:700;">${String.fromCharCode(65 + index)}</span><span style="color:white;font-size:12px;font-weight:600;flex:1;">${sectionName}</span><span style="color:#94a3b8;font-size:9px;">${entries.length} parameter${entries.length !== 1 ? "s" : ""}</span></div>`
+      ? `<div class="bg-slate-700 py-2 px-3.5 flex items-center gap-2">
+          <span class="w-5 h-5 bg-white/15 rounded flex items-center justify-center text-white text-[9px] font-bold">${String.fromCharCode(65 + index)}</span>
+          <span class="text-white text-xs font-semibold flex-1">${sectionName}</span>
+          <span class="text-slate-400 text-[9px]">${entries.length} parameter${entries.length !== 1 ? "s" : ""}</span>
+        </div>`
       : "";
-    return `<div style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:10px;">${headerHTML}<table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#f8fafc;border-bottom:1px solid #e2e8f0;"><th style="padding:5px 12px;text-align:left;font-size:9px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;width:34%;">Parameter</th><th style="padding:5px 12px;text-align:left;font-size:9px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;width:16%;">Result</th>${unitHeader}<th style="padding:5px 12px;text-align:left;font-size:9px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;width:24%;">Ref. Range</th><th style="padding:5px 12px;text-align:left;font-size:9px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;width:18%;">Status</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+
+    return `<div class="border border-slate-200 rounded-lg overflow-hidden mb-2.5">
+      ${headerHTML}
+      <table class="w-full border-collapse">
+        <thead>
+          <tr class="bg-slate-50 border-b border-slate-200">
+            <th class="py-[5px] px-3 text-left text-[9px] font-bold text-gray-500 uppercase tracking-[0.05em] w-[34%]">Parameter</th>
+            <th class="py-[5px] px-3 text-left text-[9px] font-bold text-gray-500 uppercase tracking-[0.05em] w-[16%]">Result</th>
+            ${unitHeader}
+            <th class="py-[5px] px-3 text-left text-[9px] font-bold text-gray-500 uppercase tracking-[0.05em] w-[24%]">Ref. Range</th>
+            <th class="py-[5px] px-3 text-left text-[9px] font-bold text-gray-500 uppercase tracking-[0.05em] w-[18%]">Status</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
   };
 
   const mainFields = [
@@ -334,7 +349,10 @@ function buildPrintHTML({ reportName, shortId, patient, labInfo, sections, print
   const mainCells = mainFields
     .map(
       ({ label, value }) =>
-        `<td style="padding:6px 12px;background:white;vertical-align:top;border-right:1px solid #e2e8f0;width:20%;"><div style="font-size:8px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.06em;">${label}</div><div style="font-size:11px;font-weight:600;color:#1e293b;margin-top:2px;">${value || "—"}</div></td>`,
+        `<td class="py-1.5 px-3 bg-white align-top border-r border-slate-200 w-1/5">
+          <div class="text-[8px] font-bold text-gray-400 uppercase tracking-[0.06em]">${label}</div>
+          <div class="text-[11px] font-semibold text-slate-800 mt-0.5">${value || "—"}</div>
+        </td>`,
     )
     .join("");
 
@@ -353,14 +371,88 @@ function buildPrintHTML({ reportName, shortId, patient, labInfo, sections, print
   const total = normal + low + high;
 
   const topBlock = isPad
-    ? `<div style="height:1.5in;background:white;"></div>`
-    : `<div style="background:#1e293b;padding:16px 20px;display:flex;align-items:flex-start;justify-content:space-between;border-radius:10px 10px 0 0;"><div><div style="font-size:15px;font-weight:700;color:white;">${labInfo.name}</div><div style="font-size:10px;color:#94a3b8;margin-top:3px;">${labInfo.tagline}</div><div style="font-size:9px;color:#64748b;margin-top:4px;">📍 ${labInfo.address}</div></div><div style="text-align:right;"><div style="font-size:9px;color:#94a3b8;">📞 ${labInfo.phone}</div><div style="font-size:9px;color:#94a3b8;margin-top:2px;">✉ ${labInfo.email}</div><div style="font-size:9px;color:#64748b;margin-top:4px;font-family:monospace;">Reg: ${labInfo.regNo}</div></div></div>`;
+    ? `<div class="h-[1.5in] bg-white"></div>`
+    : `<div class="bg-slate-800 py-4 px-5 flex items-start justify-between rounded-t-[10px]">
+        <div>
+          <div class="text-[15px] font-bold text-white">${labInfo.name}</div>
+          <div class="text-[10px] text-slate-400 mt-[3px]">${labInfo.tagline}</div>
+          <div class="text-[9px] text-slate-500 mt-1">📍 ${labInfo.address}</div>
+        </div>
+        <div class="text-right">
+          <div class="text-[9px] text-slate-400">📞 ${labInfo.phone}</div>
+          <div class="text-[9px] text-slate-400 mt-0.5">✉ ${labInfo.email}</div>
+          <div class="text-[9px] text-slate-500 mt-1 font-mono">Reg: ${labInfo.regNo}</div>
+        </div>
+      </div>`;
 
   const footerBlock = isPad
     ? ""
-    : `<div class="footer-fixed"><table style="width:100%;max-width:680px;margin:0 auto 8px;"><tr><td style="width:45%;padding-right:20px;"><div style="height:30px;border-bottom:1px dashed #cbd5e1;"></div><div style="font-size:9px;color:#94a3b8;margin-top:3px;">Pathologist Signature &amp; Seal</div></td><td style="width:10%;"></td><td style="width:45%;padding-left:20px;"><div style="height:30px;border-bottom:1px dashed #cbd5e1;"></div><div style="font-size:9px;color:#94a3b8;margin-top:3px;text-align:right;">Authorized Signatory</div></td></tr></table><div style="font-size:9px;color:#94a3b8;text-align:center;max-width:680px;margin:0 auto;">For qualified medical professionals only. Interpret results in full clinical context. · ${labInfo.name} · ${labInfo.phone}</div></div>`;
+    : `<div class="py-2.5 px-5 border-t border-slate-100 bg-white print:fixed print:bottom-0 print:left-0 print:right-0">
+        <table class="w-full max-w-[680px] mx-auto mb-2">
+          <tr>
+            <td class="w-[45%] pr-5">
+              <div class="h-[30px] border-b border-dashed border-slate-300"></div>
+              <div class="text-[9px] text-slate-400 mt-[3px]">Pathologist Signature &amp; Seal</div>
+            </td>
+            <td class="w-[10%]"></td>
+            <td class="w-[45%] pl-5">
+              <div class="h-[30px] border-b border-dashed border-slate-300"></div>
+              <div class="text-[9px] text-slate-400 mt-[3px] text-right">Authorized Signatory</div>
+            </td>
+          </tr>
+        </table>
+        <div class="text-[9px] text-slate-400 text-center max-w-[680px] mx-auto">
+          For qualified medical professionals only. Interpret results in full clinical context. · ${labInfo.name} · ${labInfo.phone}
+        </div>
+      </div>`;
 
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>${reportName}</title><style>* { box-sizing:border-box;margin:0;padding:0 } body { font-family:'Segoe UI',Arial,sans-serif;background:white;color:#1e293b;-webkit-print-color-adjust:exact;print-color-adjust:exact } @page { size:A4;margin:14mm } @media print { .footer-fixed { position:fixed;bottom:0;left:0;right:0;padding:10px 20px;background:white;border-top:1px solid #f1f5f9; } }</style></head><body><div style="max-width:680px;margin:0 auto;padding-bottom:${isPad ? "20px" : "90px"};">${topBlock}<div style="background:#f1f5f9;padding:8px 20px;display:flex;align-items:center;justify-content:space-between;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;"><div style="font-size:14px;font-weight:700;color:#0f172a;">${reportName}</div>${shortId ? `<div style="font-size:9px;color:#94a3b8;font-family:monospace;">Invoice No: ${shortId}</div>` : ""}</div><table style="width:100%;border-collapse:collapse;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;"><tr style="border-bottom:1px solid #e2e8f0;">${mainCells}</tr><tr><td colspan="5" style="padding:5px 12px;background:white;"><span style="font-size:8px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.06em;margin-right:10px;">Referred By</span><span style="font-size:11px;font-weight:600;color:#1e293b;">${patient.referredBy || "—"}</span></td></tr></table>${total > 0 ? `<div style="background:#f8fafc;padding:7px 20px;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;font-size:11px;display:flex;gap:6px;"><span style="color:#64748b;">${total} parameters:</span><span style="font-weight:700;color:#059669;">${normal} Normal</span>${low > 0 ? `<span>·</span><span style="font-weight:700;color:#d97706;">${low} Low</span>` : ""}${high > 0 ? `<span>·</span><span style="font-weight:700;color:#dc2626;">${high} High</span>` : ""}</div>` : ""}<div style="padding:14px 20px;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">${sections.map(([name, data], i) => renderSection(name, data, i)).join("")}</div></div>${footerBlock}</body></html>`;
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>${reportName}</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  /* The only two rules with no Tailwind/class-based equivalent: @page has
+     no selector to attach a class to, and -webkit-print-color-adjust has
+     no Tailwind utility. Everything else in this document is Tailwind. */
+  @page { size: A4; margin: 14mm; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+</style>
+</head>
+<body class="font-sans bg-white text-slate-800 m-0 p-0">
+  <div class="max-w-[680px] mx-auto ${isPad ? "pb-5" : "pb-[90px]"}">
+    ${topBlock}
+    <div class="bg-slate-100 py-2 px-5 flex items-center justify-between border-l border-r border-b border-slate-200">
+      <div class="text-sm font-bold text-slate-900">${reportName}</div>
+      ${shortId ? `<div class="text-[9px] text-slate-400 font-mono">Invoice No: ${shortId}</div>` : ""}
+    </div>
+    <table class="w-full border-collapse border-l border-r border-b border-slate-200">
+      <tr class="border-b border-slate-200">${mainCells}</tr>
+      <tr>
+        <td colspan="5" class="py-[5px] px-3 bg-white">
+          <span class="text-[8px] font-bold text-gray-400 uppercase tracking-[0.06em] mr-2.5">Referred By</span>
+          <span class="text-[11px] font-semibold text-slate-800">${patient.referredBy || "—"}</span>
+        </td>
+      </tr>
+    </table>
+    ${
+      total > 0
+        ? `<div class="bg-slate-50 py-[7px] px-5 border-l border-r border-b border-slate-200 text-[11px] flex gap-1.5">
+            <span class="text-slate-500">${total} parameters:</span>
+            <span class="font-bold text-emerald-600">${normal} Normal</span>
+            ${low > 0 ? `<span>·</span><span class="font-bold text-amber-600">${low} Low</span>` : ""}
+            ${high > 0 ? `<span>·</span><span class="font-bold text-red-600">${high} High</span>` : ""}
+          </div>`
+        : ""
+    }
+    <div class="p-3.5 px-5 border-l border-r border-slate-200">
+      ${sections.map(([name, data], i) => renderSection(name, data, i)).join("")}
+    </div>
+  </div>
+  ${footerBlock}
+</body>
+</html>`;
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
@@ -381,10 +473,8 @@ function ReportViewer({
   const resolvedReportName = report.name || reportName || "Lab Report";
   const filename = `${resolvedReportName.replace(/\s+/g, "_")}_report.pdf`;
 
-  // ── invoiceId prop takes priority, fall back to report field ─────────────────
   const shortId = invoiceId || report.invoiceId || "";
 
-  // ── Filter out metadata keys — only keep actual section objects ──────────────
   const sections = Object.entries(report).filter(
     ([key, val]) =>
       !REPORT_META_KEYS.has(key) && val !== null && typeof val === "object" && !Array.isArray(val) && !val.$oid,
@@ -401,7 +491,6 @@ function ReportViewer({
       />,
     ).toBlob();
 
-  // ── Print via hidden iframe — no new tab ─────────────────────────────────────
   const handlePrint = () => {
     const html = buildPrintHTML({
       reportName: resolvedReportName,
@@ -417,7 +506,7 @@ function ReportViewer({
 
     const iframe = document.createElement("iframe");
     iframe.id = "ur-print-frame";
-    iframe.style.cssText = "position:fixed;top:0;left:0;width:0;height:0;border:none;visibility:hidden;";
+    iframe.className = "fixed top-0 left-0 w-0 h-0 border-0 invisible";
     document.body.appendChild(iframe);
 
     iframe.contentDocument.open();
@@ -510,7 +599,6 @@ function ReportViewer({
 
   return (
     <div className="max-w-2xl mx-auto font-sans">
-      {/* Action buttons */}
       <div className="flex items-center justify-end gap-2 mb-3">
         <button
           onClick={handleShare}
@@ -535,9 +623,7 @@ function ReportViewer({
         </button>
       </div>
 
-      {/* Report card */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-        {/* Lab header — hidden on PAD */}
         {!isPad && (
           <div className="bg-slate-800 px-5 py-4 flex items-start justify-between gap-4">
             <div className="flex items-start gap-3">
@@ -567,7 +653,6 @@ function ReportViewer({
           </div>
         )}
 
-        {/* Report title bar with Invoice No */}
         <div className="flex items-center justify-between px-5 py-2.5 bg-slate-100 border-b border-slate-200">
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-slate-500 flex-shrink-0" />
@@ -595,7 +680,6 @@ function ReportViewer({
         </div>
       </div>
 
-      {/* Footer — hidden on PAD */}
       {!isPad && (
         <div className="mt-8 pt-6 border-t border-slate-200">
           <div className="grid grid-cols-2 gap-8 mb-5">

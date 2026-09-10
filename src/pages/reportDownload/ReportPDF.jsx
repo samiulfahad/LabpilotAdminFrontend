@@ -1,3 +1,10 @@
+// ReportPDF.jsx — UNCHANGED.
+// @react-pdf/renderer does not render to the DOM/CSSOM at all — it lays out
+// a PDF document tree directly, and StyleSheet.create() is its own styling
+// API (a small CSS-like subset, but not real CSS and not something a browser
+// stylesheet or Tailwind's build pipeline can touch). There is no Tailwind
+// equivalent for a PDF document, so this file keeps its existing styling
+// exactly as-is.
 import { Document, Page, Text, View, StyleSheet, Font } from "@react-pdf/renderer";
 
 const C = {
@@ -19,7 +26,6 @@ const C = {
 
 const s = StyleSheet.create({
   page: { fontFamily: "Helvetica", fontSize: 9, color: C.dark, paddingBottom: 80 },
-  // ── lab header ──
   header: { backgroundColor: C.dark, padding: "12 16", flexDirection: "row", justifyContent: "space-between" },
   headerLeft: { flexDirection: "row", gap: 10 },
   labName: { fontSize: 13, fontFamily: "Helvetica-Bold", color: "white" },
@@ -27,7 +33,6 @@ const s = StyleSheet.create({
   labAddr: { fontSize: 7, color: "#64748b", marginTop: 3 },
   headerRight: { alignItems: "flex-end" },
   headerSmall: { fontSize: 7, color: C.muted, marginBottom: 2 },
-  // ── title bar ──
   titleBar: {
     backgroundColor: C.light,
     padding: "7 16",
@@ -38,7 +43,6 @@ const s = StyleSheet.create({
   },
   titleText: { fontSize: 12, fontFamily: "Helvetica-Bold", color: "#0f172a" },
   invoiceText: { fontSize: 7, color: C.muted, fontFamily: "Courier" },
-  // ── patient grid ──
   patientRow: { flexDirection: "row", borderBottom: `1 solid ${C.border}` },
   patientCell: { flex: 1, padding: "5 10", backgroundColor: "white", borderRight: `1 solid ${C.border}` },
   cellLabel: { fontSize: 6.5, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 },
@@ -51,7 +55,6 @@ const s = StyleSheet.create({
     borderBottom: `1 solid ${C.border}`,
     gap: 8,
   },
-  // ── summary ──
   summaryBar: {
     backgroundColor: "#f8fafc",
     padding: "5 16",
@@ -60,7 +63,6 @@ const s = StyleSheet.create({
     alignItems: "center",
     borderBottom: `1 solid ${C.border}`,
   },
-  // ── section ──
   sectionWrap: { marginBottom: 8, border: `1 solid ${C.border}`, borderRadius: 4 },
   sectionHead: { backgroundColor: C.mid, padding: "6 10", flexDirection: "row", alignItems: "center", gap: 6 },
   sectionBadge: {
@@ -74,7 +76,6 @@ const s = StyleSheet.create({
   sectionBadgeTxt: { fontSize: 7, fontFamily: "Helvetica-Bold", color: "white" },
   sectionName: { flex: 1, fontSize: 9, fontFamily: "Helvetica-Bold", color: "white" },
   sectionCount: { fontSize: 7, color: C.muted },
-  // ── table ──
   tableHead: { flexDirection: "row", backgroundColor: "#f8fafc", borderBottom: `1 solid ${C.border}`, padding: "3 0" },
   th: { fontSize: 7, fontFamily: "Helvetica-Bold", color: "#6b7280", textTransform: "uppercase", paddingHorizontal: 8 },
   tableRow: { flexDirection: "row", borderBottom: `1 solid #f1f5f9`, paddingVertical: 5 },
@@ -83,7 +84,6 @@ const s = StyleSheet.create({
   tdUnit: { fontSize: 7.5, paddingHorizontal: 8, color: "#64748b", textTransform: "uppercase" },
   tdMuted: { fontSize: 8, paddingHorizontal: 8, color: "#6b7280" },
   pill: { borderRadius: 99, paddingHorizontal: 5, paddingVertical: 1.5, fontSize: 7, fontFamily: "Helvetica-Bold" },
-  // ── footer (fixed at bottom of every page) ──
   footer: { position: "absolute", bottom: 0, left: 0, right: 0, padding: "10 16", borderTop: `1 solid ${C.border}` },
   sigRow: { flexDirection: "row", marginBottom: 10 },
   sigBox: { flex: 1 },
@@ -92,7 +92,6 @@ const s = StyleSheet.create({
   footerNote: { fontSize: 7, color: C.muted, textAlign: "center", marginTop: 4 },
 });
 
-// ── Status resolution — mirrors ReportViewer.jsx ────────────────────────────
 function parseRange(ref) {
   if (!ref) return null;
   const m = ref.match(/^([\d.]+)\s*[–\-]\s*([\d.]+)$/);
@@ -122,7 +121,6 @@ function isResultField(field) {
   return Boolean(field.referenceRange) || Boolean(field.referenceTag) || Boolean(field.unit);
 }
 
-/** Strip meta keys (__showTitle) from section data before rendering. */
 function getSectionEntries(sectionData) {
   return Object.entries(sectionData).filter(([key]) => key !== "__showTitle");
 }
@@ -143,10 +141,6 @@ function Pill({ status, label }) {
   );
 }
 
-/**
- * PDFSection
- * showHeader: when false the dark title bar is omitted.
- */
 function PDFSection({ sectionName, sectionData, index, showHeader }) {
   const entries = getSectionEntries(sectionData);
   const resultEntries = entries.filter(([, v]) => isResultField(v));
@@ -159,7 +153,6 @@ function PDFSection({ sectionName, sectionData, index, showHeader }) {
 
   return (
     <View style={s.sectionWrap}>
-      {/* Header — conditionally rendered */}
       {showHeader && (
         <View style={s.sectionHead}>
           <View style={s.sectionBadge}>
@@ -172,7 +165,6 @@ function PDFSection({ sectionName, sectionData, index, showHeader }) {
         </View>
       )}
 
-      {/* Result table */}
       {resultEntries.length > 0 && (
         <View>
           <View style={s.tableHead}>
@@ -203,7 +195,6 @@ function PDFSection({ sectionName, sectionData, index, showHeader }) {
         </View>
       )}
 
-      {/* Plain rows */}
       {plainEntries.length > 0 && (
         <View style={{ borderTop: resultEntries.length > 0 ? `1 solid ${C.border}` : undefined }}>
           {plainEntries.map(([name, field]) => {
@@ -257,7 +248,6 @@ export function ReportPDFDocument({ report, reportName, shortId, patient, labInf
   return (
     <Document>
       <Page size="A4" style={s.page}>
-        {/* Lab header */}
         <View style={s.header}>
           <View style={s.headerLeft}>
             <View>
@@ -273,13 +263,11 @@ export function ReportPDFDocument({ report, reportName, shortId, patient, labInf
           </View>
         </View>
 
-        {/* Title bar */}
         <View style={s.titleBar}>
           <Text style={s.titleText}>{reportName}</Text>
           {shortId ? <Text style={s.invoiceText}>Invoice No: {shortId}</Text> : null}
         </View>
 
-        {/* Patient grid */}
         <View style={s.patientRow}>
           {mainFields.map(({ label, value }) => (
             <View key={label} style={s.patientCell}>
@@ -293,7 +281,6 @@ export function ReportPDFDocument({ report, reportName, shortId, patient, labInf
           <Text style={[s.cellValue, { fontSize: 9 }]}>{patient.referredBy || "—"}</Text>
         </View>
 
-        {/* Summary */}
         {total > 0 && (
           <View style={s.summaryBar}>
             <Text style={{ fontSize: 8, color: "#64748b" }}>{total} parameters:</Text>
@@ -303,7 +290,6 @@ export function ReportPDFDocument({ report, reportName, shortId, patient, labInf
           </View>
         )}
 
-        {/* Sections */}
         <View style={{ padding: "10 14" }}>
           {sections.map(([sectionName, sectionData], i) => (
             <PDFSection
@@ -316,7 +302,6 @@ export function ReportPDFDocument({ report, reportName, shortId, patient, labInf
           ))}
         </View>
 
-        {/* Footer — fixed at bottom of every A4 page */}
         <View style={s.footer} fixed>
           <View style={s.sigRow}>
             <View style={[s.sigBox, { marginRight: 40 }]}>

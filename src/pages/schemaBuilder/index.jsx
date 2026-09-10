@@ -1,6 +1,8 @@
+// SchemaBuilder.jsx
 import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { create } from "zustand";
+import { immer } from "zustand/middleware/immer";
 import {
   Plus,
   Trash2,
@@ -31,6 +33,10 @@ import {
 } from "lucide-react";
 
 // ─── Zustand Store ────────────────────────────────────────────────────────────
+// NOTE: uses the immer middleware so every action can just "mutate" the draft
+// state directly instead of hand-spreading nested arrays/objects. Requires
+// `immer` as a dependency (zustand lists it as an optional peer dep):
+//   npm install immer
 const INITIAL_SCHEMA = {
   description: "",
   testId: "",
@@ -39,148 +45,142 @@ const INITIAL_SCHEMA = {
   sections: [{ id: Date.now(), name: "Section A", showTitleInReport: true, fields: [] }],
 };
 
+// Prevents the mouse scroll wheel from incrementing/decrementing a focused
+// number input. Native <input type="number"> listens for wheel events while
+// focused, so the only reliable fix is to blur the input before the browser
+// gets a chance to act on the scroll.
+const preventWheelChange = (e) => e.currentTarget.blur();
+
 const emptyStandardRange = () => ({ type: "none", mode: "range", data: {} });
 const emptyReferenceValue = () => ({ type: "none", data: {} });
 
-const useSchemaStore = create((set, get) => ({
-  tests: [],
-  loadingTests: true,
-  schema: INITIAL_SCHEMA,
-  errors: {},
-  fieldErrors: {},
+const findSection = (s, sectionId) => s.schema.sections.find((sec) => sec.id === sectionId);
+const findField = (sec, fieldId) => sec?.fields.find((f) => f.id === fieldId);
 
-  setTests: (tests) => set({ tests, loadingTests: false }),
-  setLoadingTests: (v) => set({ loadingTests: v }),
-  setSchema: (schema) => set({ schema }),
-  resetSchema: () =>
-    set({
-      schema: {
-        ...INITIAL_SCHEMA,
-        sections: [{ id: Date.now(), name: "Section A", showTitleInReport: true, fields: [] }],
-      },
-      errors: {},
-      fieldErrors: {},
-    }),
-  setSchemaField: (key, value) =>
-    set((s) => ({ schema: { ...s.schema, [key]: value }, errors: { ...s.errors, [key]: undefined } })),
-  setErrors: (errors) => set({ errors }),
-  setFieldErrors: (fieldErrors) => set({ fieldErrors }),
+const useSchemaStore = create(
+  immer((set) => ({
+    tests: [],
+    loadingTests: true,
+    schema: INITIAL_SCHEMA,
+    errors: {},
+    fieldErrors: {},
 
-  addSection: () =>
-    set((s) => ({
-      schema: {
-        ...s.schema,
-        sections: [
-          ...s.schema.sections,
-          {
-            id: Date.now(),
-            name: `Section ${String.fromCharCode(65 + s.schema.sections.length)}`,
-            showTitleInReport: true,
-            fields: [],
-          },
-        ],
-      },
-    })),
+    setTests: (tests) =>
+      set((s) => {
+        s.tests = tests;
+        s.loadingTests = false;
+      }),
+    setLoadingTests: (v) =>
+      set((s) => {
+        s.loadingTests = v;
+      }),
+    setSchema: (schema) =>
+      set((s) => {
+        s.schema = schema;
+      }),
+    resetSchema: () =>
+      set((s) => {
+        s.schema = {
+          ...INITIAL_SCHEMA,
+          sections: [{ id: Date.now(), name: "Section A", showTitleInReport: true, fields: [] }],
+        };
+        s.errors = {};
+        s.fieldErrors = {};
+      }),
+    setSchemaField: (key, value) =>
+      set((s) => {
+        s.schema[key] = value;
+        s.errors[key] = undefined;
+      }),
+    setErrors: (errors) =>
+      set((s) => {
+        s.errors = errors;
+      }),
+    setFieldErrors: (fieldErrors) =>
+      set((s) => {
+        s.fieldErrors = fieldErrors;
+      }),
 
-  removeSection: (sectionId) =>
-    set((s) => ({
-      schema: { ...s.schema, sections: s.schema.sections.filter((sec) => sec.id !== sectionId) },
-    })),
+    addSection: () =>
+      set((s) => {
+        s.schema.sections.push({
+          id: Date.now(),
+          name: `Section ${String.fromCharCode(65 + s.schema.sections.length)}`,
+          showTitleInReport: true,
+          fields: [],
+        });
+      }),
 
-  updateSection: (sectionId, key, value) =>
-    set((s) => ({
-      schema: {
-        ...s.schema,
-        sections: s.schema.sections.map((sec) => (sec.id === sectionId ? { ...sec, [key]: value } : sec)),
-      },
-    })),
+    removeSection: (sectionId) =>
+      set((s) => {
+        s.schema.sections = s.schema.sections.filter((sec) => sec.id !== sectionId);
+      }),
 
-  addField: (sectionId) =>
-    set((s) => ({
-      schema: {
-        ...s.schema,
-        sections: s.schema.sections.map((sec) =>
-          sec.id === sectionId
-            ? {
-                ...sec,
-                fields: [
-                  ...sec.fields,
-                  {
-                    id: Date.now(),
-                    name: "",
-                    type: "number",
-                    required: false,
-                    standardRange: emptyStandardRange(),
-                    referenceValue: emptyReferenceValue(),
-                    unit: "",
-                    options: [],
-                    maxLength: 200,
-                  },
-                ],
-              }
-            : sec,
-        ),
-      },
-    })),
+    reorderSections: (fromIndex, toIndex) =>
+      set((s) => {
+        if (fromIndex === toIndex || fromIndex == null || toIndex == null) return;
+        const [moved] = s.schema.sections.splice(fromIndex, 1);
+        s.schema.sections.splice(toIndex, 0, moved);
+      }),
 
-  removeField: (sectionId, fieldId) =>
-    set((s) => ({
-      schema: {
-        ...s.schema,
-        sections: s.schema.sections.map((sec) =>
-          sec.id === sectionId ? { ...sec, fields: sec.fields.filter((f) => f.id !== fieldId) } : sec,
-        ),
-      },
-    })),
+    updateSection: (sectionId, key, value) =>
+      set((s) => {
+        const sec = findSection(s, sectionId);
+        if (sec) sec[key] = value;
+      }),
 
-  updateField: (sectionId, fieldId, key, value) =>
-    set((s) => ({
-      schema: {
-        ...s.schema,
-        sections: s.schema.sections.map((sec) =>
-          sec.id === sectionId
-            ? { ...sec, fields: sec.fields.map((f) => (f.id === fieldId ? { ...f, [key]: value } : f)) }
-            : sec,
-        ),
-      },
-      fieldErrors: key === "name" ? { ...s.fieldErrors, [fieldId]: undefined } : s.fieldErrors,
-    })),
+    addField: (sectionId) =>
+      set((s) => {
+        const sec = findSection(s, sectionId);
+        if (!sec) return;
+        sec.fields.push({
+          id: Date.now(),
+          name: "",
+          type: "number",
+          required: false,
+          standardRange: emptyStandardRange(),
+          referenceValue: emptyReferenceValue(),
+          unit: "",
+          options: [],
+          maxLength: 200,
+        });
+      }),
 
-  // scope: "none" | "simple" | "age" | "gender" | "combined"
-  // mode: "range" | "tagged"
-  updateFieldStandardRange: (sectionId, fieldId, scope, mode, data) =>
-    set((s) => ({
-      schema: {
-        ...s.schema,
-        sections: s.schema.sections.map((sec) =>
-          sec.id === sectionId
-            ? {
-                ...sec,
-                fields: sec.fields.map((f) =>
-                  f.id === fieldId ? { ...f, standardRange: { type: scope, mode, data } } : f,
-                ),
-              }
-            : sec,
-        ),
-      },
-    })),
+    removeField: (sectionId, fieldId) =>
+      set((s) => {
+        const sec = findSection(s, sectionId);
+        if (sec) sec.fields = sec.fields.filter((f) => f.id !== fieldId);
+      }),
 
-  // scope: "none" | "simple" | "age" | "gender" | "combined"
-  updateFieldReferenceValue: (sectionId, fieldId, scope, data) =>
-    set((s) => ({
-      schema: {
-        ...s.schema,
-        sections: s.schema.sections.map((sec) =>
-          sec.id === sectionId
-            ? {
-                ...sec,
-                fields: sec.fields.map((f) => (f.id === fieldId ? { ...f, referenceValue: { type: scope, data } } : f)),
-              }
-            : sec,
-        ),
-      },
-    })),
-}));
+    reorderFields: (sectionId, fromIndex, toIndex) =>
+      set((s) => {
+        if (fromIndex === toIndex || fromIndex == null || toIndex == null) return;
+        const sec = findSection(s, sectionId);
+        if (!sec) return;
+        const [moved] = sec.fields.splice(fromIndex, 1);
+        sec.fields.splice(toIndex, 0, moved);
+      }),
+
+    updateField: (sectionId, fieldId, key, value) =>
+      set((s) => {
+        const f = findField(findSection(s, sectionId), fieldId);
+        if (f) f[key] = value;
+        if (key === "name" && s.fieldErrors[fieldId] !== undefined) s.fieldErrors[fieldId] = undefined;
+      }),
+
+    updateFieldStandardRange: (sectionId, fieldId, scope, mode, data) =>
+      set((s) => {
+        const f = findField(findSection(s, sectionId), fieldId);
+        if (f) f.standardRange = { type: scope, mode, data };
+      }),
+
+    updateFieldReferenceValue: (sectionId, fieldId, scope, data) =>
+      set((s) => {
+        const f = findField(findSection(s, sectionId), fieldId);
+        if (f) f.referenceValue = { type: scope, data };
+      }),
+  })),
+);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const FIELD_TYPES = [
@@ -205,10 +205,6 @@ const RANGE_MODES = [
   { value: "tagged", label: "Tagged Tiers", icon: Tags },
 ];
 
-// Comparator options for a single tagged tier. "between" is the classic
-// min/max bucket (and the default for tiers saved before comparators
-// existed); the other four let a tier be defined by a single open-ended
-// threshold instead of a bounded range (e.g. "Critical" = value > 10).
 const TIER_COMPARATORS = [
   { value: "between", label: "Between" },
   { value: "gt", label: "> Greater than" },
@@ -217,10 +213,6 @@ const TIER_COMPARATORS = [
   { value: "lte", label: "≤ At most" },
 ];
 
-// Shared gender list — keep the "other" bucket in sync everywhere gender-scoped
-// ranges/reference values are configured. The renderer picks these buckets up
-// generically via `data[patientGender]`, so no renderer changes are needed
-// when this list changes.
 const GENDER_OPTIONS = [
   { value: "male", label: "Male", symbol: "♂", classes: "bg-blue-100 text-blue-600" },
   { value: "female", label: "Female", symbol: "♀", classes: "bg-pink-100 text-pink-600" },
@@ -236,14 +228,112 @@ const defaultDataForScope = (scope, mode) => {
   if (mode === "tagged") {
     if (scope === "age" || scope === "combined") return [];
     if (scope === "gender") return { male: [], female: [], other: [] };
-    return []; // simple / none -> flat tier list
+    return [];
   }
   if (scope === "age" || scope === "combined") return [];
   if (scope === "gender") return {};
-  return {}; // simple / none
+  return {};
 };
 
 const newTier = () => ({ id: Date.now() + Math.random(), label: "", comparator: "between", min: "", max: "" });
+
+const emptyAge = () => ({ years: "", months: "", days: "" });
+const AGE_NO_LIMIT = { years: 150, months: 11, days: 31 };
+const isAgeNoLimit = (age) =>
+  !!age && Number(age.years) === 150 && Number(age.months) === 11 && Number(age.days) === 31;
+
+// Age data shape is always { years, months, days } — unchanged. The UI just
+// hides the month/day inputs behind a "+ month / day" toggle until they're
+// needed, defaulting open only when a saved value already has month/day set.
+function AgeInputGroup({ value, onChange, isMax }) {
+  const val = value || {};
+  const displayAsEmpty = isMax && isAgeNoLimit(val);
+  const hasMonthOrDay = Number(val.months) > 0 || Number(val.days) > 0;
+  const [expanded, setExpanded] = useState(hasMonthOrDay && !displayAsEmpty);
+
+  useEffect(() => {
+    if (hasMonthOrDay && !displayAsEmpty) setExpanded(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasMonthOrDay, displayAsEmpty]);
+
+  const setPart = (key, max) => (e) => {
+    const raw = e.target.value;
+    if (raw === "") {
+      onChange({ ...val, [key]: "" });
+      return;
+    }
+    const num = Math.max(0, Math.min(max, Number(raw)));
+    onChange({ ...val, [key]: num });
+  };
+
+  const handleYearsBlur = () => {
+    if (isMax && (val.years === "" || val.years === undefined || val.years === null)) {
+      onChange({ ...AGE_NO_LIMIT });
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap w-full">
+      <div className="flex items-center gap-1.5">
+        <input
+          type="number"
+          min={0}
+          max={150}
+          placeholder={isMax ? "∞" : "Y"}
+          title="Years"
+          value={displayAsEmpty ? "" : (val.years ?? "")}
+          onChange={setPart("years", 150)}
+          onBlur={isMax ? handleYearsBlur : undefined}
+          onWheel={preventWheelChange}
+          className="w-20 px-3 py-2.5 border border-gray-200 rounded-lg text-base text-center focus:outline-none focus:ring-1 focus:ring-blue-300"
+        />
+        <span className="text-xs text-gray-400">y</span>
+      </div>
+
+      {expanded ? (
+        <>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number"
+              min={0}
+              max={11}
+              placeholder="M"
+              title="Months"
+              value={displayAsEmpty ? "" : (val.months ?? "")}
+              onChange={setPart("months", 11)}
+              onWheel={preventWheelChange}
+              className="w-16 px-3 py-2.5 border border-gray-200 rounded-lg text-base text-center focus:outline-none focus:ring-1 focus:ring-blue-300"
+            />
+            <span className="text-xs text-gray-400">m</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number"
+              min={0}
+              max={31}
+              placeholder="D"
+              title="Days"
+              value={displayAsEmpty ? "" : (val.days ?? "")}
+              onChange={setPart("days", 31)}
+              onWheel={preventWheelChange}
+              className="w-16 px-3 py-2.5 border border-gray-200 rounded-lg text-base text-center focus:outline-none focus:ring-1 focus:ring-blue-300"
+            />
+            <span className="text-xs text-gray-400">d</span>
+          </div>
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          title="Add month/day"
+          className="flex items-center justify-center w-9 h-9 rounded-lg border border-dashed border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-colors flex-shrink-0"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+      )}
+    </div>
+  );
+}
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
@@ -331,11 +421,9 @@ function TestSearchSelect({ tests, value, onChange, error }) {
   );
 }
 
-// ── Plain min/max range inputs (existing) ──────────────────────────────────
-
 function SimpleRangeInput({ data, onChange }) {
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-2 gap-3 w-full">
       <div>
         <label className="text-xs text-gray-500 mb-1 block">Min Value</label>
         <input
@@ -343,6 +431,7 @@ function SimpleRangeInput({ data, onChange }) {
           value={data?.min || ""}
           onChange={(e) => onChange({ ...data, min: e.target.value })}
           placeholder="0"
+          onWheel={preventWheelChange}
           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
         />
       </div>
@@ -353,6 +442,7 @@ function SimpleRangeInput({ data, onChange }) {
           value={data?.max || ""}
           onChange={(e) => onChange({ ...data, max: e.target.value })}
           placeholder="100"
+          onWheel={preventWheelChange}
           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
         />
       </div>
@@ -362,39 +452,46 @@ function SimpleRangeInput({ data, onChange }) {
 
 function AgeRangeInput({ data = [], onChange }) {
   const rows = Array.isArray(data) ? data : [];
-  const addRow = () => onChange([...rows, { minAge: "", maxAge: "", minValue: "", maxValue: "" }]);
+  const addRow = () =>
+    onChange([...rows, { minAge: emptyAge(), maxAge: { ...AGE_NO_LIMIT }, minValue: "", maxValue: "" }]);
   const removeRow = (i) => onChange(rows.filter((_, idx) => idx !== i));
   const update = (i, key, val) => onChange(rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
 
-  const handleMaxAgeBlur = (i, val) => {
-    if (val === "" || val === null || val === undefined) update(i, "maxAge", 999);
-  };
-
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 w-full">
       {rows.map((row, i) => (
-        <div key={i} className="grid grid-cols-5 gap-2 items-center p-2 bg-gray-50 rounded-lg border border-gray-200">
-          {[
-            ["minAge", "Min Age", false],
-            ["maxAge", "Max Age", true],
-            ["minValue", "Min Val", false],
-            ["maxValue", "Max Val", false],
-          ].map(([k, lbl, isMaxAge]) => (
-            <div key={k}>
-              <label className="text-xs text-gray-400 block mb-0.5">{lbl}</label>
-              <input
-                type="number"
-                value={isMaxAge && (row[k] === 999 || row[k] === "") ? "" : row[k] || ""}
-                placeholder={isMaxAge ? "∞ (no limit)" : ""}
-                onChange={(e) => update(i, k, e.target.value)}
-                onBlur={isMaxAge ? (e) => handleMaxAgeBlur(i, e.target.value) : undefined}
-                className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
-              />
-            </div>
-          ))}
+        <div key={i} className="flex flex-wrap items-end gap-3 p-2 bg-gray-50 rounded-lg border border-gray-200 w-full">
+          <div>
+            <label className="text-xs text-gray-400 block mb-0.5">Min Age</label>
+            <AgeInputGroup value={row.minAge} onChange={(v) => update(i, "minAge", v)} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 block mb-0.5">Max Age (∞ = no limit)</label>
+            <AgeInputGroup value={row.maxAge} onChange={(v) => update(i, "maxAge", v)} isMax />
+          </div>
+          <div className="flex-1 min-w-[80px]">
+            <label className="text-xs text-gray-400 block mb-0.5">Min Val</label>
+            <input
+              type="number"
+              value={row.minValue}
+              onChange={(e) => update(i, "minValue", e.target.value)}
+              onWheel={preventWheelChange}
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+            />
+          </div>
+          <div className="flex-1 min-w-[80px]">
+            <label className="text-xs text-gray-400 block mb-0.5">Max Val</label>
+            <input
+              type="number"
+              value={row.maxValue}
+              onChange={(e) => update(i, "maxValue", e.target.value)}
+              onWheel={preventWheelChange}
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+            />
+          </div>
           <button
             onClick={() => removeRow(i)}
-            className="mt-4 p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -413,9 +510,9 @@ function AgeRangeInput({ data = [], onChange }) {
 function GenderRangeInput({ data = {}, onChange }) {
   const update = (gender, key, val) => onChange({ ...data, [gender]: { ...(data[gender] || {}), [key]: val } });
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 w-full">
       {GENDER_OPTIONS.map(({ value: gender, label, symbol, classes }) => (
-        <div key={gender} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+        <div key={gender} className="p-3 bg-gray-50 rounded-lg border border-gray-200 w-full">
           <div className="flex items-center gap-1.5 mb-2">
             <span className="text-sm font-medium text-gray-700">{label}</span>
             <span className={`text-xs px-2 py-0.5 rounded-full ${classes}`}>{symbol}</span>
@@ -428,6 +525,7 @@ function GenderRangeInput({ data = {}, onChange }) {
                   type="number"
                   value={data[gender]?.[k] || ""}
                   onChange={(e) => update(gender, k, e.target.value)}
+                  onWheel={preventWheelChange}
                   className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-300"
                 />
               </div>
@@ -441,49 +539,61 @@ function GenderRangeInput({ data = {}, onChange }) {
 
 function CombinedRangeInput({ data = [], onChange }) {
   const rows = Array.isArray(data) ? data : [];
-  const addRow = () => onChange([...rows, { gender: "male", minAge: "", maxAge: 999, minValue: "", maxValue: "" }]);
+  const addRow = () =>
+    onChange([
+      ...rows,
+      { gender: "male", minAge: emptyAge(), maxAge: { ...AGE_NO_LIMIT }, minValue: "", maxValue: "" },
+    ]);
   const removeRow = (i) => onChange(rows.filter((_, idx) => idx !== i));
   const update = (i, key, val) => onChange(rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 w-full">
       {rows.map((row, i) => (
-        <div key={i} className="grid grid-cols-6 gap-2 items-center p-2 bg-gray-50 rounded-lg border border-gray-200">
+        <div key={i} className="flex flex-wrap items-end gap-3 p-2 bg-gray-50 rounded-lg border border-gray-200 w-full">
           <div>
             <label className="text-xs text-gray-400 block mb-0.5">Gender</label>
             <select
               value={row.gender}
               onChange={(e) => update(i, "gender", e.target.value)}
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+              className="w-24 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
             >
               <option value="male">Male</option>
               <option value="female">Female</option>
               <option value="other">Other</option>
             </select>
           </div>
-          {[
-            ["minAge", "Min Age"],
-            ["maxAge", "Max Age"],
-            ["minValue", "Min Val"],
-            ["maxValue", "Max Val"],
-          ].map(([k, lbl]) => (
-            <div key={k}>
-              <label className="text-xs text-gray-400 block mb-0.5">{lbl}</label>
-              <input
-                type="number"
-                value={k === "maxAge" && (row[k] === 999 || row[k] === "") ? "" : row[k] || ""}
-                placeholder={k === "maxAge" ? "∞ (no limit)" : ""}
-                onChange={(e) => update(i, k, e.target.value === "" ? "" : Number(e.target.value))}
-                onBlur={(e) => {
-                  if (k === "maxAge" && e.target.value === "") update(i, "maxAge", 999);
-                }}
-                className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
-              />
-            </div>
-          ))}
+          <div>
+            <label className="text-xs text-gray-400 block mb-0.5">Min Age</label>
+            <AgeInputGroup value={row.minAge} onChange={(v) => update(i, "minAge", v)} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 block mb-0.5">Max Age (∞ = no limit)</label>
+            <AgeInputGroup value={row.maxAge} onChange={(v) => update(i, "maxAge", v)} isMax />
+          </div>
+          <div className="flex-1 min-w-[80px]">
+            <label className="text-xs text-gray-400 block mb-0.5">Min Val</label>
+            <input
+              type="number"
+              value={row.minValue}
+              onChange={(e) => update(i, "minValue", e.target.value === "" ? "" : Number(e.target.value))}
+              onWheel={preventWheelChange}
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+            />
+          </div>
+          <div className="flex-1 min-w-[80px]">
+            <label className="text-xs text-gray-400 block mb-0.5">Max Val</label>
+            <input
+              type="number"
+              value={row.maxValue}
+              onChange={(e) => update(i, "maxValue", e.target.value === "" ? "" : Number(e.target.value))}
+              onWheel={preventWheelChange}
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+            />
+          </div>
           <button
             onClick={() => removeRow(i)}
-            className="mt-4 p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -499,20 +609,17 @@ function CombinedRangeInput({ data = [], onChange }) {
   );
 }
 
-// ── Tagged tiers (min-max OR a single greater/less-than threshold -> label) ──
-
+// Tier rows: label used to be flex-1 (large) and the value inputs were fixed
+// at w-20/w-24 (small). Flipped below — label + condition are fixed/narrow,
+// value inputs flex to fill the remaining row width.
 function TierListEditor({ tiers = [], onChange, dense }) {
   const rows = Array.isArray(tiers) ? tiers : [];
   const addTier = () => onChange([...rows, newTier()]);
   const removeTier = (i) => onChange(rows.filter((_, idx) => idx !== i));
   const update = (i, key, val) => onChange(rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
 
-  // Legacy tiers saved before comparators existed have no `comparator` field —
-  // treat them as "between" so old schemas keep rendering unchanged.
   const comparatorOf = (t) => t.comparator || "between";
 
-  // Switching comparator clears the field(s) that no longer apply, so a
-  // stale min/max from a previous mode doesn't silently linger in the data.
   const setComparator = (i, comparator) =>
     onChange(
       rows.map((r, idx) => {
@@ -525,25 +632,25 @@ function TierListEditor({ tiers = [], onChange, dense }) {
     );
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 w-full">
       {rows.map((tier, i) => {
         const comparator = comparatorOf(tier);
         return (
           <div
             key={tier.id || i}
-            className={`flex flex-wrap items-end gap-2 ${dense ? "p-1.5" : "p-2"} bg-white rounded-lg border border-gray-200`}
+            className={`flex flex-wrap items-end gap-2 ${dense ? "p-1.5" : "p-2"} bg-white rounded-lg border border-gray-200 w-full`}
           >
-            <div className="flex-1 min-w-[120px]">
+            <div className="w-28 flex-shrink-0">
               {!dense && <label className="text-xs text-gray-400 block mb-0.5">Tag Label</label>}
               <input
                 value={tier.label}
                 onChange={(e) => update(i, "label", e.target.value)}
-                placeholder="e.g. Low, Normal, High, Critical"
+                placeholder="Low, Normal…"
                 className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
               />
             </div>
 
-            <div className="w-36">
+            <div className="w-28 flex-shrink-0">
               {!dense && <label className="text-xs text-gray-400 block mb-0.5">Condition</label>}
               <select
                 value={comparator}
@@ -560,23 +667,25 @@ function TierListEditor({ tiers = [], onChange, dense }) {
 
             {comparator === "between" && (
               <>
-                <div className="w-20">
+                <div className="flex-1 min-w-[80px]">
                   {!dense && <label className="text-xs text-gray-400 block mb-0.5">Min</label>}
                   <input
                     type="number"
                     value={tier.min}
                     onChange={(e) => update(i, "min", e.target.value)}
                     placeholder="Min"
+                    onWheel={preventWheelChange}
                     className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
                   />
                 </div>
-                <div className="w-20">
+                <div className="flex-1 min-w-[80px]">
                   {!dense && <label className="text-xs text-gray-400 block mb-0.5">Max</label>}
                   <input
                     type="number"
                     value={tier.max}
                     onChange={(e) => update(i, "max", e.target.value)}
                     placeholder="Max"
+                    onWheel={preventWheelChange}
                     className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
                   />
                 </div>
@@ -584,26 +693,28 @@ function TierListEditor({ tiers = [], onChange, dense }) {
             )}
 
             {(comparator === "gt" || comparator === "gte") && (
-              <div className="w-24">
+              <div className="flex-1 min-w-[100px]">
                 {!dense && <label className="text-xs text-gray-400 block mb-0.5">Value</label>}
                 <input
                   type="number"
                   value={tier.min}
                   onChange={(e) => update(i, "min", e.target.value)}
                   placeholder="e.g. 10"
+                  onWheel={preventWheelChange}
                   className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
                 />
               </div>
             )}
 
             {(comparator === "lt" || comparator === "lte") && (
-              <div className="w-24">
+              <div className="flex-1 min-w-[100px]">
                 {!dense && <label className="text-xs text-gray-400 block mb-0.5">Value</label>}
                 <input
                   type="number"
                   value={tier.max}
                   onChange={(e) => update(i, "max", e.target.value)}
                   placeholder="e.g. 5"
+                  onWheel={preventWheelChange}
                   className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
                 />
               </div>
@@ -630,7 +741,7 @@ function TierListEditor({ tiers = [], onChange, dense }) {
 
 function TaggedSimpleInput({ data = [], onChange }) {
   return (
-    <div className="p-2 bg-gray-50 rounded-lg border border-gray-200">
+    <div className="p-2 bg-gray-50 rounded-lg border border-gray-200 w-full">
       <TierListEditor tiers={data} onChange={onChange} />
     </div>
   );
@@ -638,38 +749,24 @@ function TaggedSimpleInput({ data = [], onChange }) {
 
 function TaggedAgeInput({ data = [], onChange }) {
   const brackets = Array.isArray(data) ? data : [];
-  const addBracket = () => onChange([...brackets, { minAge: "", maxAge: 999, tiers: [] }]);
+  const addBracket = () => onChange([...brackets, { minAge: emptyAge(), maxAge: { ...AGE_NO_LIMIT }, tiers: [] }]);
   const removeBracket = (i) => onChange(brackets.filter((_, idx) => idx !== i));
   const update = (i, key, val) => onChange(brackets.map((b, idx) => (idx === i ? { ...b, [key]: val } : b)));
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 w-full">
       {brackets.map((b, i) => (
-        <div key={i} className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
-          <div className="flex items-end gap-2">
-            <div className="w-24">
+        <div key={i} className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2 w-full">
+          <div className="flex flex-wrap items-end gap-3 w-full">
+            <div>
               <label className="text-xs text-gray-400 block mb-0.5">Min Age</label>
-              <input
-                type="number"
-                value={b.minAge}
-                onChange={(e) => update(i, "minAge", e.target.value)}
-                className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
-              />
+              <AgeInputGroup value={b.minAge} onChange={(v) => update(i, "minAge", v)} />
             </div>
-            <div className="w-24">
-              <label className="text-xs text-gray-400 block mb-0.5">Max Age</label>
-              <input
-                type="number"
-                value={b.maxAge === 999 || b.maxAge === "" ? "" : b.maxAge}
-                placeholder="∞"
-                onChange={(e) => update(i, "maxAge", e.target.value)}
-                onBlur={(e) => {
-                  if (e.target.value === "") update(i, "maxAge", 999);
-                }}
-                className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
-              />
+            <div>
+              <label className="text-xs text-gray-400 block mb-0.5">Max Age (∞ = no limit)</label>
+              <AgeInputGroup value={b.maxAge} onChange={(v) => update(i, "maxAge", v)} isMax />
             </div>
-            <span className="text-xs text-gray-400 pb-2">years — tags for this age bracket:</span>
+            <span className="text-xs text-gray-400 pb-2">tags for this age bracket:</span>
             <button
               onClick={() => removeBracket(i)}
               className="ml-auto p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
@@ -693,9 +790,9 @@ function TaggedAgeInput({ data = [], onChange }) {
 function TaggedGenderInput({ data = {}, onChange }) {
   const update = (gender, tiers) => onChange({ ...data, [gender]: tiers });
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 w-full">
       {GENDER_OPTIONS.map(({ value: gender, label, symbol, classes }) => (
-        <div key={gender} className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+        <div key={gender} className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2 w-full">
           <div className="flex items-center gap-1.5">
             <span className="text-sm font-medium text-gray-700">{label}</span>
             <span className={`text-xs px-2 py-0.5 rounded-full ${classes}`}>{symbol}</span>
@@ -709,48 +806,35 @@ function TaggedGenderInput({ data = {}, onChange }) {
 
 function TaggedCombinedInput({ data = [], onChange }) {
   const brackets = Array.isArray(data) ? data : [];
-  const addBracket = () => onChange([...brackets, { gender: "male", minAge: "", maxAge: 999, tiers: [] }]);
+  const addBracket = () =>
+    onChange([...brackets, { gender: "male", minAge: emptyAge(), maxAge: { ...AGE_NO_LIMIT }, tiers: [] }]);
   const removeBracket = (i) => onChange(brackets.filter((_, idx) => idx !== i));
   const update = (i, key, val) => onChange(brackets.map((b, idx) => (idx === i ? { ...b, [key]: val } : b)));
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 w-full">
       {brackets.map((b, i) => (
-        <div key={i} className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
-          <div className="flex items-end gap-2">
-            <div className="w-24">
+        <div key={i} className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2 w-full">
+          <div className="flex flex-wrap items-end gap-3 w-full">
+            <div>
               <label className="text-xs text-gray-400 block mb-0.5">Gender</label>
               <select
                 value={b.gender}
                 onChange={(e) => update(i, "gender", e.target.value)}
-                className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+                className="w-24 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
               >
                 <option value="male">Male</option>
                 <option value="female">Female</option>
                 <option value="other">Other</option>
               </select>
             </div>
-            <div className="w-20">
+            <div>
               <label className="text-xs text-gray-400 block mb-0.5">Min Age</label>
-              <input
-                type="number"
-                value={b.minAge}
-                onChange={(e) => update(i, "minAge", e.target.value)}
-                className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
-              />
+              <AgeInputGroup value={b.minAge} onChange={(v) => update(i, "minAge", v)} />
             </div>
-            <div className="w-20">
-              <label className="text-xs text-gray-400 block mb-0.5">Max Age</label>
-              <input
-                type="number"
-                value={b.maxAge === 999 || b.maxAge === "" ? "" : b.maxAge}
-                placeholder="∞"
-                onChange={(e) => update(i, "maxAge", e.target.value)}
-                onBlur={(e) => {
-                  if (e.target.value === "") update(i, "maxAge", 999);
-                }}
-                className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
-              />
+            <div>
+              <label className="text-xs text-gray-400 block mb-0.5">Max Age (∞ = no limit)</label>
+              <AgeInputGroup value={b.maxAge} onChange={(v) => update(i, "maxAge", v)} isMax />
             </div>
             <button
               onClick={() => removeBracket(i)}
@@ -772,11 +856,9 @@ function TaggedCombinedInput({ data = [], onChange }) {
   );
 }
 
-// ── Reference value inputs (NEW: text fields, e.g. color=Gray as the standard) ──
-
 function RefSimpleInput({ data = {}, onChange }) {
   return (
-    <div>
+    <div className="w-full">
       <label className="text-xs text-gray-500 mb-1 block">Reference / Standard Value</label>
       <input
         value={data.value || ""}
@@ -790,40 +872,23 @@ function RefSimpleInput({ data = {}, onChange }) {
 
 function RefAgeInput({ data = [], onChange }) {
   const rows = Array.isArray(data) ? data : [];
-  const addRow = () => onChange([...rows, { minAge: "", maxAge: 999, value: "" }]);
+  const addRow = () => onChange([...rows, { minAge: emptyAge(), maxAge: { ...AGE_NO_LIMIT }, value: "" }]);
   const removeRow = (i) => onChange(rows.filter((_, idx) => idx !== i));
   const update = (i, key, val) => onChange(rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 w-full">
       {rows.map((row, i) => (
-        <div
-          key={i}
-          className="grid grid-cols-[1fr_1fr_2fr_auto] gap-2 items-end p-2 bg-white rounded-lg border border-gray-200"
-        >
+        <div key={i} className="flex flex-wrap items-end gap-3 p-2 bg-white rounded-lg border border-gray-200 w-full">
           <div>
             <label className="text-xs text-gray-400 block mb-0.5">Min Age</label>
-            <input
-              type="number"
-              value={row.minAge}
-              onChange={(e) => update(i, "minAge", e.target.value)}
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
-            />
+            <AgeInputGroup value={row.minAge} onChange={(v) => update(i, "minAge", v)} />
           </div>
           <div>
-            <label className="text-xs text-gray-400 block mb-0.5">Max Age</label>
-            <input
-              type="number"
-              value={row.maxAge === 999 || row.maxAge === "" ? "" : row.maxAge}
-              placeholder="∞"
-              onChange={(e) => update(i, "maxAge", e.target.value)}
-              onBlur={(e) => {
-                if (e.target.value === "") update(i, "maxAge", 999);
-              }}
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
-            />
+            <label className="text-xs text-gray-400 block mb-0.5">Max Age (∞ = no limit)</label>
+            <AgeInputGroup value={row.maxAge} onChange={(v) => update(i, "maxAge", v)} isMax />
           </div>
-          <div>
+          <div className="flex-1 min-w-[140px]">
             <label className="text-xs text-gray-400 block mb-0.5">Reference Value</label>
             <input
               value={row.value}
@@ -853,7 +918,7 @@ function RefAgeInput({ data = [], onChange }) {
 function RefGenderInput({ data = {}, onChange }) {
   const update = (gender, value) => onChange({ ...data, [gender]: { value } });
   return (
-    <div className="grid grid-cols-3 gap-3">
+    <div className="grid grid-cols-3 gap-3 w-full">
       {GENDER_OPTIONS.map(({ value: gender, label, symbol }) => (
         <div key={gender}>
           <label className="text-xs text-gray-400 mb-1 flex items-center gap-1">
@@ -874,23 +939,21 @@ function RefGenderInput({ data = {}, onChange }) {
 
 function RefCombinedInput({ data = [], onChange }) {
   const rows = Array.isArray(data) ? data : [];
-  const addRow = () => onChange([...rows, { gender: "male", minAge: "", maxAge: 999, value: "" }]);
+  const addRow = () =>
+    onChange([...rows, { gender: "male", minAge: emptyAge(), maxAge: { ...AGE_NO_LIMIT }, value: "" }]);
   const removeRow = (i) => onChange(rows.filter((_, idx) => idx !== i));
   const update = (i, key, val) => onChange(rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 w-full">
       {rows.map((row, i) => (
-        <div
-          key={i}
-          className="grid grid-cols-[1fr_1fr_1fr_2fr_auto] gap-2 items-end p-2 bg-white rounded-lg border border-gray-200"
-        >
+        <div key={i} className="flex flex-wrap items-end gap-3 p-2 bg-white rounded-lg border border-gray-200 w-full">
           <div>
             <label className="text-xs text-gray-400 block mb-0.5">Gender</label>
             <select
               value={row.gender}
               onChange={(e) => update(i, "gender", e.target.value)}
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
+              className="w-24 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
             >
               <option value="male">Male</option>
               <option value="female">Female</option>
@@ -899,27 +962,13 @@ function RefCombinedInput({ data = [], onChange }) {
           </div>
           <div>
             <label className="text-xs text-gray-400 block mb-0.5">Min Age</label>
-            <input
-              type="number"
-              value={row.minAge}
-              onChange={(e) => update(i, "minAge", e.target.value)}
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
-            />
+            <AgeInputGroup value={row.minAge} onChange={(v) => update(i, "minAge", v)} />
           </div>
           <div>
-            <label className="text-xs text-gray-400 block mb-0.5">Max Age</label>
-            <input
-              type="number"
-              value={row.maxAge === 999 || row.maxAge === "" ? "" : row.maxAge}
-              placeholder="∞"
-              onChange={(e) => update(i, "maxAge", e.target.value)}
-              onBlur={(e) => {
-                if (e.target.value === "") update(i, "maxAge", 999);
-              }}
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
-            />
+            <label className="text-xs text-gray-400 block mb-0.5">Max Age (∞ = no limit)</label>
+            <AgeInputGroup value={row.maxAge} onChange={(v) => update(i, "maxAge", v)} isMax />
           </div>
-          <div>
+          <div className="flex-1 min-w-[140px]">
             <label className="text-xs text-gray-400 block mb-0.5">Reference Value</label>
             <input
               value={row.value}
@@ -955,7 +1004,7 @@ function OptionsInput({ options = [], onChange }) {
     }
   };
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 w-full">
       <div className="flex flex-wrap gap-1.5">
         {options.map((opt, i) => (
           <span
@@ -992,8 +1041,6 @@ function OptionsInput({ options = [], onChange }) {
   );
 }
 
-// ── Standard Range section (number fields): mode toggle + scope + inputs ──
-
 function StandardRangeSection({ field, sectionId }) {
   const { updateFieldStandardRange, updateField } = useSchemaStore();
   const scope = field.standardRange?.type || "none";
@@ -1012,7 +1059,7 @@ function StandardRangeSection({ field, sectionId }) {
   const setData = (newData) => updateFieldStandardRange(sectionId, field.id, scope, mode, newData);
 
   return (
-    <div className="space-y-4 p-4 bg-violet-50/50 rounded-xl border border-violet-100">
+    <div className="space-y-4 p-4 bg-violet-50/50 rounded-xl border border-violet-100 w-full">
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="text-xs font-medium text-gray-600 block mb-1.5">Standard Range Scope</label>
@@ -1075,8 +1122,6 @@ function StandardRangeSection({ field, sectionId }) {
   );
 }
 
-// ── Reference Value section (text/textarea fields) ─────────────────────────
-
 function ReferenceValueSection({ field, sectionId }) {
   const { updateFieldReferenceValue } = useSchemaStore();
   const scope = field.referenceValue?.type || "none";
@@ -1089,7 +1134,7 @@ function ReferenceValueSection({ field, sectionId }) {
   const setData = (newData) => updateFieldReferenceValue(sectionId, field.id, scope, newData);
 
   return (
-    <div className="space-y-3 p-4 bg-amber-50/50 rounded-xl border border-amber-100">
+    <div className="space-y-3 p-4 bg-amber-50/50 rounded-xl border border-amber-100 w-full">
       <div>
         <label className="text-xs font-medium text-gray-600 block mb-1.5">Reference Value Scope</label>
         <select
@@ -1114,7 +1159,9 @@ function ReferenceValueSection({ field, sectionId }) {
   );
 }
 
-function FieldCard({ field, sectionId, fieldError }) {
+// FieldCard now accepts drag handlers from its parent SectionCard so the
+// whole header row can be picked up (click-and-hold) to reorder fields.
+function FieldCard({ field, sectionId, fieldError, onDragStart, onDragOver, onDrop, isDragging }) {
   const [expanded, setExpanded] = useState(true);
   const { updateField, removeField } = useSchemaStore();
   const Icon = fieldTypeIcon(field.type);
@@ -1129,13 +1176,27 @@ function FieldCard({ field, sectionId, fieldError }) {
 
   return (
     <div
-      className={`border rounded-xl overflow-hidden transition-all hover:shadow-sm ${fieldError ? "border-red-300 ring-1 ring-red-200" : "border-gray-200 hover:border-gray-300"}`}
+      className={`border rounded-xl overflow-hidden transition-all hover:shadow-sm ${
+        fieldError ? "border-red-300 ring-1 ring-red-200" : "border-gray-200 hover:border-gray-300"
+      } ${isDragging ? "opacity-40" : ""}`}
     >
       <div
-        className={`flex items-center gap-3 px-4 py-3 cursor-pointer select-none transition-colors ${expanded ? "bg-white" : fieldError ? "bg-red-50" : "bg-gray-50"}`}
+        draggable
+        onDragStart={onDragStart}
+        onDragOver={(e) => {
+          e.preventDefault();
+          onDragOver?.(e);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          onDrop?.(e);
+        }}
+        className={`flex items-center gap-3 px-4 py-3 cursor-pointer select-none transition-colors ${
+          expanded ? "bg-white" : fieldError ? "bg-red-50" : "bg-gray-50"
+        }`}
         onClick={() => setExpanded(!expanded)}
       >
-        <div className="p-1.5 bg-gray-100 rounded-md">
+        <div className="p-1.5 bg-gray-100 rounded-md cursor-grab active:cursor-grabbing" title="Drag to reorder">
           <GripVertical className="w-3.5 h-3.5 text-gray-400" />
         </div>
         <div
@@ -1258,6 +1319,7 @@ function FieldCard({ field, sectionId, fieldError }) {
                     const parsed = parseInt(e.target.value, 10);
                     updateField(sectionId, field.id, "maxLength", Number.isNaN(parsed) ? 200 : parsed);
                   }}
+                  onWheel={preventWheelChange}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
                 />
               </div>
@@ -1270,16 +1332,43 @@ function FieldCard({ field, sectionId, fieldError }) {
   );
 }
 
-function SectionCard({ section, index, total, fieldErrors, sectionError }) {
+// SectionCard now owns its own field-drag state and drives reorderFields;
+// it also accepts drag handlers from the parent list so whole sections can
+// be reordered by grabbing the section header.
+function SectionCard({
+  section,
+  index,
+  total,
+  fieldErrors,
+  sectionError,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  isDragging,
+}) {
   const [expanded, setExpanded] = useState(true);
-  const { updateSection, removeSection, addField } = useSchemaStore();
+  const [draggedFieldIndex, setDraggedFieldIndex] = useState(null);
+  const { updateSection, removeSection, addField, reorderFields } = useSchemaStore();
   const hasFieldError = section.fields.some((f) => fieldErrors[f.id]);
   const hasError = hasFieldError || !!sectionError;
   const showTitle = section.showTitleInReport !== false;
 
   return (
-    <div className="border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-      <div className="flex items-center gap-3 px-5 py-4 bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
+    <div className={`border border-gray-200 rounded-2xl overflow-hidden shadow-sm ${isDragging ? "opacity-40" : ""}`}>
+      <div
+        draggable
+        onDragStart={onDragStart}
+        onDragOver={(e) => {
+          e.preventDefault();
+          onDragOver?.(e);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          onDrop?.(e);
+        }}
+        className="flex items-center gap-3 px-5 py-4 bg-gradient-to-r from-gray-50 to-white border-b border-gray-100 cursor-grab active:cursor-grabbing"
+      >
+        <GripVertical className="w-4 h-4 text-gray-300 flex-shrink-0" title="Drag to reorder" />
         <div
           className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${hasError ? "bg-red-500" : "bg-blue-500"}`}
         >
@@ -1289,6 +1378,7 @@ function SectionCard({ section, index, total, fieldErrors, sectionError }) {
           <input
             value={section.name}
             onChange={(e) => updateSection(section.id, "name", e.target.value)}
+            onMouseDown={(e) => e.stopPropagation()}
             className={`w-full font-semibold text-gray-800 text-sm bg-transparent border-b focus:outline-none pb-0.5 transition-colors ${
               sectionError ? "border-red-400" : "border-transparent focus:border-blue-400"
             }`}
@@ -1306,6 +1396,7 @@ function SectionCard({ section, index, total, fieldErrors, sectionError }) {
             {section.fields.length} field{section.fields.length !== 1 ? "s" : ""}
           </span>
           <button
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               updateSection(section.id, "showTitleInReport", !showTitle);
@@ -1335,14 +1426,22 @@ function SectionCard({ section, index, total, fieldErrors, sectionError }) {
           </button>
           {total > 1 && (
             <button
-              onClick={() => removeSection(section.id)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                removeSection(section.id);
+              }}
               className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
             >
               <Trash2 className="w-4 h-4" />
             </button>
           )}
           <button
-            onClick={() => setExpanded(!expanded)}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded(!expanded);
+            }}
             className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <ChevronDown className={`w-4 h-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
@@ -1361,8 +1460,22 @@ function SectionCard({ section, index, total, fieldErrors, sectionError }) {
               <p className="text-xs text-gray-300 mt-0.5">Add a field to this section</p>
             </div>
           ) : (
-            section.fields.map((field) => (
-              <FieldCard key={field.id} field={field} sectionId={section.id} fieldError={fieldErrors[field.id]} />
+            section.fields.map((field, fi) => (
+              <FieldCard
+                key={field.id}
+                field={field}
+                sectionId={section.id}
+                fieldError={fieldErrors[field.id]}
+                isDragging={draggedFieldIndex === fi}
+                onDragStart={() => setDraggedFieldIndex(fi)}
+                onDragOver={() => {}}
+                onDrop={() => {
+                  if (draggedFieldIndex !== null && draggedFieldIndex !== fi) {
+                    reorderFields(section.id, draggedFieldIndex, fi);
+                  }
+                  setDraggedFieldIndex(null);
+                }}
+              />
             ))
           )}
           <button
@@ -1397,6 +1510,35 @@ function SkeletonLoader() {
   );
 }
 
+function normalizeAgeValue(raw, isMax) {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    return {
+      years: raw.years ?? "",
+      months: raw.months ?? "",
+      days: raw.days ?? "",
+    };
+  }
+  if (raw === undefined || raw === null || raw === "") {
+    return isMax ? { ...AGE_NO_LIMIT } : emptyAge();
+  }
+  if (isMax && Number(raw) >= 999) return { ...AGE_NO_LIMIT };
+  return { years: Number(raw), months: 0, days: 0 };
+}
+
+function normalizeAgeRows(rows) {
+  if (!Array.isArray(rows)) return rows;
+  return rows.map((r) => ({
+    ...r,
+    ...(r.minAge !== undefined ? { minAge: normalizeAgeValue(r.minAge, false) } : {}),
+    ...(r.maxAge !== undefined ? { maxAge: normalizeAgeValue(r.maxAge, true) } : {}),
+  }));
+}
+
+function normalizeAgeData(scope, data) {
+  if (scope !== "age" && scope !== "combined") return data;
+  return normalizeAgeRows(data);
+}
+
 function normalizeSchema(apiSchema) {
   return {
     ...apiSchema,
@@ -1407,25 +1549,26 @@ function normalizeSchema(apiSchema) {
       fields: (sec.fields || []).map((f) => ({
         ...f,
         id: f.id ?? f._id ?? Date.now() + Math.random(),
-        // Normalize maxLength so old/loaded schemas without a valid value
-        // (e.g. null, 0, NaN) fall back to the same 200 default the builder
-        // and renderer both assume.
         maxLength: f.maxLength || 200,
         standardRange: f.standardRange
           ? {
               type: f.standardRange.type || "none",
               mode: f.standardRange.mode || "range",
-              data:
+              data: normalizeAgeData(
+                f.standardRange.type,
                 f.standardRange.data ||
-                (f.standardRange.type === "age" || f.standardRange.type === "combined" ? [] : {}),
+                  (f.standardRange.type === "age" || f.standardRange.type === "combined" ? [] : {}),
+              ),
             }
           : emptyStandardRange(),
         referenceValue: f.referenceValue
           ? {
               type: f.referenceValue.type || "none",
-              data:
+              data: normalizeAgeData(
+                f.referenceValue.type,
                 f.referenceValue.data ||
-                (f.referenceValue.type === "age" || f.referenceValue.type === "combined" ? [] : {}),
+                  (f.referenceValue.type === "age" || f.referenceValue.type === "combined" ? [] : {}),
+              ),
             }
           : emptyReferenceValue(),
       })),
@@ -1447,6 +1590,7 @@ export default function SchemaBuilder() {
     resetSchema,
     setSchemaField,
     addSection,
+    reorderSections,
     setErrors,
     setFieldErrors,
   } = useSchemaStore();
@@ -1460,21 +1604,30 @@ export default function SchemaBuilder() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [toast, setToast] = useState(null);
+  const [draggedSectionIndex, setDraggedSectionIndex] = useState(null);
+  // Drives the toast's enter/exit transition using Tailwind transition
+  // utilities instead of a CSS @keyframes animation. Starts false so the
+  // toast mounts off-position/transparent, then flips true a frame later
+  // so the browser animates the transition instead of snapping instantly.
+  const [toastVisible, setToastVisible] = useState(false);
   const [activeTab, setActiveTab] = useState("builder");
 
   const showToast = (type, message) => {
     setToast({ type, message });
-    setTimeout(() => setToast(null), 3500);
+    setToastVisible(false);
+    requestAnimationFrame(() => requestAnimationFrame(() => setToastVisible(true)));
+    setTimeout(() => {
+      setToastVisible(false);
+      setTimeout(() => setToast(null), 300);
+    }, 3500);
   };
 
-  // ── Reset store when mounting in create mode ──
   useEffect(() => {
     if (!isEditMode) {
       resetSchema();
     }
   }, [isEditMode]);
 
-  // ── Load tests ──
   useEffect(() => {
     const loadTests = async () => {
       setLoadingTests(true);
@@ -1489,7 +1642,6 @@ export default function SchemaBuilder() {
     loadTests();
   }, []);
 
-  // ── Load schema in edit mode ──
   useEffect(() => {
     if (!isEditMode) return;
     const loadSchema = async () => {
@@ -1513,11 +1665,7 @@ export default function SchemaBuilder() {
     if (!schema.testId) errs.testId = "Please select a test";
     if (!schema.description.trim()) errs.description = "Description is required";
 
-    // Section names back the report payload keys in SchemaRenderer
-    // (report[section.name] = {...}), so duplicate or empty names would
-    // silently merge/overwrite unrelated sections' data on submit and
-    // on re-hydrating a saved report for edit.
-    const seenSections = new Map(); // normalized name -> first section id with that name
+    const seenSections = new Map();
     const sectionErrs = {};
     schema.sections.forEach((sec) => {
       const name = sec.name.trim();
@@ -1537,7 +1685,7 @@ export default function SchemaBuilder() {
 
     const fErrs = {};
     schema.sections.forEach((sec) => {
-      const seen = new Map(); // normalized name -> first field id with that name
+      const seen = new Map();
       sec.fields.forEach((f) => {
         const name = f.name.trim();
         if (!name) {
@@ -1546,7 +1694,6 @@ export default function SchemaBuilder() {
         }
         const key = name.toLowerCase();
         if (seen.has(key)) {
-          // flag both the first field with this name and this duplicate
           fErrs[f.id] = "Duplicate field name in this section";
           fErrs[seen.get(key)] = "Duplicate field name in this section";
         } else {
@@ -1572,11 +1719,6 @@ export default function SchemaBuilder() {
 
   const handleSave = async () => {
     const { errs, hasFieldErrors } = validate();
-    // Always sync errors into the store — including clearing to {} when the
-    // previous top-level errors have all been fixed. The old code only
-    // called setErrors when errs was non-empty, so a stale error (e.g. a
-    // fixed testId/description) would keep showing its red border/message
-    // forever even after the user corrected it.
     setErrors(errs);
     if (Object.keys(errs).length > 0 || hasFieldErrors) return;
 
@@ -1613,17 +1755,15 @@ export default function SchemaBuilder() {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <style>{`@keyframes slideInRight { from { opacity: 0; transform: translateX(1rem); } to { opacity: 1; transform: translateX(0); } }`}</style>
-
-      {/* Toast */}
       {toast && (
         <div
-          className={`fixed top-5 right-5 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-medium transition-all border ${
+          className={`fixed top-5 right-5 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-medium border transition-all duration-300 ease-out ${
+            toastVisible ? "translate-x-0 opacity-100" : "translate-x-4 opacity-0"
+          } ${
             toast.type === "success"
               ? "bg-white border-emerald-200 text-emerald-700"
               : "bg-white border-red-200 text-red-600"
           }`}
-          style={{ animation: "slideInRight 0.25s ease" }}
         >
           {toast.type === "success" ? (
             <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
@@ -1634,7 +1774,6 @@ export default function SchemaBuilder() {
         </div>
       )}
 
-      {/* Breadcrumb + page title */}
       <div className="mb-6">
         <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-3">
           <Link to="/schema-engine" className="hover:text-blue-600 transition-colors">
@@ -1692,7 +1831,6 @@ export default function SchemaBuilder() {
         </div>
       </div>
 
-      {/* Schema load error banner */}
       {loadError && (
         <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
           <XCircle className="w-4 h-4 flex-shrink-0 text-red-500" />
@@ -1707,7 +1845,6 @@ export default function SchemaBuilder() {
         <SkeletonLoader />
       ) : (
         <div className="space-y-6">
-          {/* Basic Info Card */}
           <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
             <div className="flex items-center gap-2 mb-5">
               <div className="p-2 bg-blue-50 rounded-lg">
@@ -1746,7 +1883,6 @@ export default function SchemaBuilder() {
                 )}
               </div>
 
-              {/* Static Standard Range */}
               <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
@@ -1776,7 +1912,6 @@ export default function SchemaBuilder() {
             </div>
           </div>
 
-          {/* Builder / Preview */}
           <div className="border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
             <div className="flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-gray-50 to-white border-b border-gray-200">
               <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
@@ -1821,6 +1956,15 @@ export default function SchemaBuilder() {
                     total={schema.sections.length}
                     fieldErrors={fieldErrors}
                     sectionError={errors.sections?.[section.id]}
+                    isDragging={draggedSectionIndex === i}
+                    onDragStart={() => setDraggedSectionIndex(i)}
+                    onDragOver={() => {}}
+                    onDrop={() => {
+                      if (draggedSectionIndex !== null && draggedSectionIndex !== i) {
+                        reorderSections(draggedSectionIndex, i);
+                      }
+                      setDraggedSectionIndex(null);
+                    }}
                   />
                 ))}
                 <button
@@ -1838,7 +1982,6 @@ export default function SchemaBuilder() {
             )}
           </div>
 
-          {/* Sticky bottom bar */}
           <div className="sticky bottom-0 -mx-4 px-4 pb-4 pt-3 bg-gradient-to-t from-white via-white to-transparent">
             <div className="flex items-center justify-between bg-white border border-gray-200 rounded-2xl px-5 py-3.5 shadow-lg shadow-gray-100">
               <Link

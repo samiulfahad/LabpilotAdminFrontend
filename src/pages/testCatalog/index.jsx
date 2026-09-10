@@ -106,6 +106,31 @@ const NoDefaultFlag = ({ compact }) => (
   </span>
 );
 
+/* ─── Duplicate-name warning ───────────────────────────────────
+   Mirrors the backend's GET /test/check-duplicate contract exactly:
+   `exact` is authoritative and blocks submission (see MFoot's
+   `disabled` prop in TestModal below); `fuzzy` is informational only
+   and never blocks — two genuinely different tests can be textually
+   close (e.g. "X-Ray Knee" vs "X-Ray Ankle"), same as the backend
+   comment explains. */
+
+const DupWarning = ({ checking, exact, fuzzy }) => {
+  if (checking) {
+    return <p className="text-[11px] text-gray-400 mt-1.5">Checking for duplicates…</p>;
+  }
+  if (exact) {
+    return (
+      <p className="text-[11px] text-red-500 mt-1.5 flex items-center gap-1">
+        <AlertCircle size={11} className="shrink-0" />A test named "{exact.name}" already exists
+      </p>
+    );
+  }
+  if (fuzzy?.length > 0) {
+    return <p className="text-[11px] text-amber-600 mt-1.5">Did you mean: {fuzzy.map((f) => f.name).join(", ")}?</p>;
+  }
+  return null;
+};
+
 /* ─── Schema Picker (list schemas already fetched by the parent,
        let the user mark one as default) ─────────────────────── */
 
@@ -220,9 +245,15 @@ const CategoryModal = ({ isOpen, onClose, onSave, initial, mode }) => {
   );
 };
 
+// Debounce (ms) before firing GET /test/check-duplicate as the user types —
+// matches the backend route comment: "Frontend calls this (debounced) as
+// the admin/client types a new test name."
+const DUPLICATE_CHECK_DEBOUNCE_MS = 400;
+
 const TestModal = ({ isOpen, onClose, onSave, initial, mode, categories, defaultCategoryId, schemas }) => {
   const [form, setForm] = useState({ name: "", categoryId: "", defaultSchemaId: "" });
   const [loading, setLoading] = useState(false);
+  const [dup, setDup] = useState({ checking: false, exact: null, fuzzy: [] });
   const isEdit = mode === "edit";
   const isOnline = schemas.length > 0;
 
@@ -233,10 +264,54 @@ const TestModal = ({ isOpen, onClose, onSave, initial, mode, categories, default
           ? { name: initial.name, categoryId: initial.categoryId ?? "", defaultSchemaId: initial.defaultSchemaId ?? "" }
           : { name: "", categoryId: defaultCategoryId ?? "", defaultSchemaId: "" },
       );
+    setDup({ checking: false, exact: null, fuzzy: [] });
   }, [isOpen, initial, defaultCategoryId]);
+
+  // Debounced call to GET /test/check-duplicate as the name changes.
+  // - Skipped when the field is empty, or (in edit mode) when the name
+  //   hasn't actually changed from what's already saved — no point
+  //   flagging a test as a duplicate of itself.
+  // - `exact` is authoritative and gates submission (see MFoot below).
+  //   `fuzzy` is informational only, same as the backend's own contract.
+  // - The backend's check-duplicate route has no `excludeId` param (unlike
+  //   PATCH /test/:id, which does `_id: { $ne: id }` server-side), so when
+  //   editing we manually drop an `exact` hit if it's just this same test.
+  useEffect(() => {
+    const name = form.name.trim();
+
+    if (!isOpen || !name) {
+      setDup({ checking: false, exact: null, fuzzy: [] });
+      return;
+    }
+    if (isEdit && name === initial?.name) {
+      setDup({ checking: false, exact: null, fuzzy: [] });
+      return;
+    }
+
+    let cancelled = false;
+    setDup((d) => ({ ...d, checking: true }));
+
+    const handle = setTimeout(async () => {
+      try {
+        const { data } = await testService.checkDuplicate(name);
+        if (cancelled) return;
+
+        const exact = data.exact && data.exact._id !== initial?._id ? data.exact : null;
+        setDup({ checking: false, exact, fuzzy: data.fuzzy ?? [] });
+      } catch {
+        if (!cancelled) setDup({ checking: false, exact: null, fuzzy: [] });
+      }
+    }, DUPLICATE_CHECK_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [form.name, isOpen, isEdit, initial]);
 
   const submit = async (e) => {
     e.preventDefault();
+    if (dup.exact) return; // safety net alongside MFoot's disabled state
     setLoading(true);
     try {
       await onSave({
@@ -260,14 +335,17 @@ const TestModal = ({ isOpen, onClose, onSave, initial, mode, categories, default
           onClose={onClose}
         />
         <div className="px-5 py-5 space-y-4">
-          <TextInput
-            label="Test Name"
-            required
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            placeholder="e.g. CBC"
-            autoFocus
-          />
+          <div>
+            <TextInput
+              label="Test Name"
+              required
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="e.g. CBC"
+              autoFocus
+            />
+            <DupWarning checking={dup.checking} exact={dup.exact} fuzzy={dup.fuzzy} />
+          </div>
           <SelectInput
             label="Category"
             required
@@ -317,7 +395,7 @@ const TestModal = ({ isOpen, onClose, onSave, initial, mode, categories, default
         <MFoot
           onClose={onClose}
           loading={loading}
-          disabled={!form.name.trim() || !form.categoryId}
+          disabled={!form.name.trim() || !form.categoryId || !!dup.exact}
           label={isEdit ? "Save Changes" : "Add Test"}
         />
       </form>

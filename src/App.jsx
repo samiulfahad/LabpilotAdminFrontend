@@ -7,7 +7,6 @@ import Layout from "./components/layout";
 import Home from "./pages/home";
 import Account from "./pages/account";
 import Labs from "./pages/labs";
-import LabManagement from "./pages/lab-management";
 import TestCatalog from "./pages/testCatalog";
 import SchemaEngine from "./pages/schemaEngine";
 import SchemaBuilder from "./pages/schemaBuilder";
@@ -69,7 +68,6 @@ function App() {
         <Route path="/labs" element={<Labs />} />
         <Route path="/lab-staffs" element={<LabStaff />} />
         <Route path="/support-admin" element={<ManageSupportAdmins />} />
-        <Route path="/lab-management" element={<LabManagement />} />
         <Route path="/billing" element={<AdminBilling />} />
         <Route path="/test-catalog" element={<TestCatalog />} />
         <Route path="/schema-engine" element={<SchemaEngine />} />

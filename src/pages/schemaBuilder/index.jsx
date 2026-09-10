@@ -205,6 +205,18 @@ const RANGE_MODES = [
   { value: "tagged", label: "Tagged Tiers", icon: Tags },
 ];
 
+// Comparator options for a single tagged tier. "between" is the classic
+// min/max bucket (and the default for tiers saved before comparators
+// existed); the other four let a tier be defined by a single open-ended
+// threshold instead of a bounded range (e.g. "Critical" = value > 10).
+const TIER_COMPARATORS = [
+  { value: "between", label: "Between" },
+  { value: "gt", label: "> Greater than" },
+  { value: "gte", label: "≥ At least" },
+  { value: "lt", label: "< Less than" },
+  { value: "lte", label: "≤ At most" },
+];
+
 // Shared gender list — keep the "other" bucket in sync everywhere gender-scoped
 // ranges/reference values are configured. The renderer picks these buckets up
 // generically via `data[patientGender]`, so no renderer changes are needed
@@ -231,7 +243,7 @@ const defaultDataForScope = (scope, mode) => {
   return {}; // simple / none
 };
 
-const newTier = () => ({ id: Date.now() + Math.random(), label: "", min: "", max: "" });
+const newTier = () => ({ id: Date.now() + Math.random(), label: "", comparator: "between", min: "", max: "" });
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
@@ -487,7 +499,7 @@ function CombinedRangeInput({ data = [], onChange }) {
   );
 }
 
-// ── Tagged tiers (NEW: min-max -> label buckets, e.g. Low / Normal / High) ──
+// ── Tagged tiers (min-max OR a single greater/less-than threshold -> label) ──
 
 function TierListEditor({ tiers = [], onChange, dense }) {
   const rows = Array.isArray(tiers) ? tiers : [];
@@ -495,50 +507,117 @@ function TierListEditor({ tiers = [], onChange, dense }) {
   const removeTier = (i) => onChange(rows.filter((_, idx) => idx !== i));
   const update = (i, key, val) => onChange(rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
 
+  // Legacy tiers saved before comparators existed have no `comparator` field —
+  // treat them as "between" so old schemas keep rendering unchanged.
+  const comparatorOf = (t) => t.comparator || "between";
+
+  // Switching comparator clears the field(s) that no longer apply, so a
+  // stale min/max from a previous mode doesn't silently linger in the data.
+  const setComparator = (i, comparator) =>
+    onChange(
+      rows.map((r, idx) => {
+        if (idx !== i) return r;
+        if (comparator === "between") return { ...r, comparator };
+        if (comparator === "gt" || comparator === "gte") return { ...r, comparator, max: "" };
+        if (comparator === "lt" || comparator === "lte") return { ...r, comparator, min: "" };
+        return { ...r, comparator };
+      }),
+    );
+
   return (
     <div className="space-y-2">
-      {rows.map((tier, i) => (
-        <div
-          key={tier.id || i}
-          className={`grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center ${dense ? "p-1.5" : "p-2"} bg-white rounded-lg border border-gray-200`}
-        >
-          <div>
-            {!dense && <label className="text-xs text-gray-400 block mb-0.5">Tag Label</label>}
-            <input
-              value={tier.label}
-              onChange={(e) => update(i, "label", e.target.value)}
-              placeholder="e.g. Low, Normal, High"
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
-            />
-          </div>
-          <div className="w-20">
-            {!dense && <label className="text-xs text-gray-400 block mb-0.5">Min</label>}
-            <input
-              type="number"
-              value={tier.min}
-              onChange={(e) => update(i, "min", e.target.value)}
-              placeholder="Min"
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
-            />
-          </div>
-          <div className="w-20">
-            {!dense && <label className="text-xs text-gray-400 block mb-0.5">Max</label>}
-            <input
-              type="number"
-              value={tier.max}
-              onChange={(e) => update(i, "max", e.target.value)}
-              placeholder="Max"
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
-            />
-          </div>
-          <button
-            onClick={() => removeTier(i)}
-            className={`${dense ? "" : "mt-4"} p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors`}
+      {rows.map((tier, i) => {
+        const comparator = comparatorOf(tier);
+        return (
+          <div
+            key={tier.id || i}
+            className={`flex flex-wrap items-end gap-2 ${dense ? "p-1.5" : "p-2"} bg-white rounded-lg border border-gray-200`}
           >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      ))}
+            <div className="flex-1 min-w-[120px]">
+              {!dense && <label className="text-xs text-gray-400 block mb-0.5">Tag Label</label>}
+              <input
+                value={tier.label}
+                onChange={(e) => update(i, "label", e.target.value)}
+                placeholder="e.g. Low, Normal, High, Critical"
+                className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+              />
+            </div>
+
+            <div className="w-36">
+              {!dense && <label className="text-xs text-gray-400 block mb-0.5">Condition</label>}
+              <select
+                value={comparator}
+                onChange={(e) => setComparator(i, e.target.value)}
+                className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300 bg-white"
+              >
+                {TIER_COMPARATORS.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {comparator === "between" && (
+              <>
+                <div className="w-20">
+                  {!dense && <label className="text-xs text-gray-400 block mb-0.5">Min</label>}
+                  <input
+                    type="number"
+                    value={tier.min}
+                    onChange={(e) => update(i, "min", e.target.value)}
+                    placeholder="Min"
+                    className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+                  />
+                </div>
+                <div className="w-20">
+                  {!dense && <label className="text-xs text-gray-400 block mb-0.5">Max</label>}
+                  <input
+                    type="number"
+                    value={tier.max}
+                    onChange={(e) => update(i, "max", e.target.value)}
+                    placeholder="Max"
+                    className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+                  />
+                </div>
+              </>
+            )}
+
+            {(comparator === "gt" || comparator === "gte") && (
+              <div className="w-24">
+                {!dense && <label className="text-xs text-gray-400 block mb-0.5">Value</label>}
+                <input
+                  type="number"
+                  value={tier.min}
+                  onChange={(e) => update(i, "min", e.target.value)}
+                  placeholder="e.g. 10"
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+                />
+              </div>
+            )}
+
+            {(comparator === "lt" || comparator === "lte") && (
+              <div className="w-24">
+                {!dense && <label className="text-xs text-gray-400 block mb-0.5">Value</label>}
+                <input
+                  type="number"
+                  value={tier.max}
+                  onChange={(e) => update(i, "max", e.target.value)}
+                  placeholder="e.g. 5"
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+                />
+              </div>
+            )}
+
+            <button
+              onClick={() => removeTier(i)}
+              className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        );
+      })}
       <button
         onClick={addTier}
         className="flex items-center gap-1.5 text-xs text-teal-600 hover:text-teal-700 font-medium px-2 py-1 hover:bg-teal-50 rounded-md transition-colors"

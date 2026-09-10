@@ -13,8 +13,8 @@ import {
   ShieldCheck,
   Activity,
   User,
+  Tag,
 } from "lucide-react";
-import LoadingScreen from "../../components/loadingPage";
 
 // ─── Global Styles ─────────────────────────────────────────────────────────────
 const STYLES = `
@@ -153,6 +153,7 @@ const STYLES = `
   .sr2-field-wrap.ok     { border-color: var(--c-green);  box-shadow: 0 0 0 3px rgba(5,150,105,0.1); }
   .sr2-field-wrap.low    { border-color: var(--c-amber);  box-shadow: 0 0 0 3px rgba(217,115,22,0.1); }
   .sr2-field-wrap.high   { border-color: var(--c-red);    box-shadow: 0 0 0 3px rgba(220,38,38,0.1); }
+  .sr2-field-wrap.tag    { border-color: var(--c-violet); box-shadow: 0 0 0 3px rgba(124,58,237,0.1); }
   .sr2-field-wrap.err    { border-color: var(--c-red);    box-shadow: 0 0 0 3px rgba(220,38,38,0.1); background: #fff8f8; }
   .sr2-field-wrap.edited { border-color: var(--c-violet); box-shadow: 0 0 0 3px rgba(124,58,237,0.1); }
   .sr2-float-label { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; font-weight: 600; color: var(--c-ink-4); text-transform: uppercase; letter-spacing: 0.05em; pointer-events: none; line-height: 1; background: transparent; transition: all 0.15s ease; white-space: nowrap; max-width: calc(100% - 64px); overflow: hidden; text-overflow: ellipsis; }
@@ -172,12 +173,14 @@ const STYLES = `
   .sr2-badge.ok     { background: var(--c-green-dim);  color: var(--c-green);  border-color: rgba(5,150,105,0.25); }
   .sr2-badge.low    { background: var(--c-amber-dim);  color: var(--c-amber);  border-color: rgba(217,115,22,0.25); }
   .sr2-badge.high   { background: var(--c-red-dim);    color: var(--c-red);    border-color: rgba(220,38,38,0.25); }
+  .sr2-badge.tag    { background: var(--c-violet-dim); color: var(--c-violet); border-color: rgba(124,58,237,0.25); text-transform: none; }
   .sr2-badge.edited { background: var(--c-violet-dim); color: var(--c-violet); border-color: rgba(124,58,237,0.2); font-family: 'JetBrains Mono', monospace; font-size: 9px; }
   .sr2-tip-wrap { position: relative; display: inline-flex; }
-  .sr2-tip-box { position: absolute; z-index: 50; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); width: 210px; background: var(--c-ink-2); color: #e2e8f0; font-size: 11px; border-radius: var(--radius-md); padding: 10px 12px; box-shadow: var(--shadow-lg); border: 1px solid rgba(255,255,255,0.08); pointer-events: none; }
+  .sr2-tip-box { position: absolute; z-index: 50; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); width: 220px; background: var(--c-ink-2); color: #e2e8f0; font-size: 11px; border-radius: var(--radius-md); padding: 10px 12px; box-shadow: var(--shadow-lg); border: 1px solid rgba(255,255,255,0.08); pointer-events: none; }
   .sr2-tip-title { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #60a5fa; margin-bottom: 7px; }
   .sr2-tip-row { color: #94a3b8; line-height: 1.75; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; }
   .sr2-tip-row span { color: #e2e8f0; font-weight: 500; }
+  .sr2-tip-sub { color: #64748b; font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 6px; margin-bottom: 2px; }
   .sr2-tip-arrow { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: var(--c-ink-2); }
   .sr2-info-btn { background: none; border: none; cursor: pointer; padding: 0; display: inline-flex; line-height: 0; }
 
@@ -215,6 +218,10 @@ const STYLES = `
   .sr2-ti-wrap.floated .sr2-ti-label, .sr2-ti-wrap:focus-within .sr2-ti-label { top: 0; transform: translateY(-50%); font-size: 9px; color: var(--c-blue); background: var(--c-surface); padding: 0 4px; left: 9px; }
   .sr2-ti { width: 100%; padding: 18px 14px 8px 12px; background: transparent; border: none; outline: none; font-family: 'Outfit', sans-serif; font-size: 13.5px; color: var(--c-ink); min-height: 54px; }
   .sr2-ti::placeholder { color: transparent; }
+
+  .sr2-ref-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 5px; padding: 0 2px; }
+  .sr2-ref-text { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--c-ink-4); display: flex; align-items: center; gap: 4px; }
+  .sr2-ref-text span { color: var(--c-violet); font-weight: 600; }
 
   .sr2-action-bar { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); flex-wrap: wrap; gap: 12px; }
   .sr2-action-hint { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--c-ink-4); }
@@ -255,7 +262,6 @@ function StyleInjector() {
       el.textContent = STYLES;
       document.head.appendChild(el);
     }
-    // Always update styles to pick up any changes
     const el = document.getElementById(id);
     if (el) el.textContent = STYLES;
   }, []);
@@ -263,39 +269,124 @@ function StyleInjector() {
 }
 
 // ─── Range Logic ──────────────────────────────────────────────────────────────
-
-export function getStandardRange(field, patientAge, patientGender) {
+// Returns either:
+//   { mode: "range", min, max }                      — plain numeric range
+//   { mode: "tagged", tiers: [{label,min,max}, ...] } — labeled tiers
+//   null                                              — no applicable range
+export function getStandardRangeInfo(field, patientAge, patientGender) {
   const sr = field.standardRange;
   if (!sr || sr.type === "none") return null;
-  if (sr.type === "simple") return { min: parseFloat(sr.data.min), max: parseFloat(sr.data.max) };
-  if (sr.type === "age" && patientAge) {
-    const age = parseFloat(patientAge);
-    const row = sr.data.find((r) => age >= parseFloat(r.minAge) && age <= parseFloat(r.maxAge));
-    if (row) return { min: parseFloat(row.minValue), max: parseFloat(row.maxValue) };
+  const mode = sr.mode || "range";
+
+  if (mode === "range") {
+    if (sr.type === "simple" && sr.data) {
+      return { mode, min: parseFloat(sr.data.min), max: parseFloat(sr.data.max) };
+    }
+    if (sr.type === "age" && patientAge && Array.isArray(sr.data)) {
+      const age = parseFloat(patientAge);
+      const row = sr.data.find((r) => age >= parseFloat(r.minAge) && age <= parseFloat(r.maxAge));
+      if (row) return { mode, min: parseFloat(row.minValue), max: parseFloat(row.maxValue) };
+    }
+    if (sr.type === "gender" && patientGender && sr.data) {
+      const g = sr.data[patientGender];
+      if (g) return { mode, min: parseFloat(g.min), max: parseFloat(g.max) };
+    }
+    if (sr.type === "combined" && patientAge && patientGender && Array.isArray(sr.data)) {
+      const age = parseFloat(patientAge);
+      const row = sr.data.find(
+        (r) => r.gender === patientGender && age >= parseFloat(r.minAge) && age <= parseFloat(r.maxAge),
+      );
+      if (row) return { mode, min: parseFloat(row.minValue), max: parseFloat(row.maxValue) };
+    }
+    return null;
   }
-  if (sr.type === "gender" && patientGender) {
-    const g = sr.data[patientGender];
-    if (g) return { min: parseFloat(g.min), max: parseFloat(g.max) };
-  }
-  if (sr.type === "combined" && patientAge && patientGender) {
+
+  // mode === "tagged"
+  let tiers = [];
+  if (sr.type === "simple" && Array.isArray(sr.data)) {
+    tiers = sr.data;
+  } else if (sr.type === "age" && patientAge && Array.isArray(sr.data)) {
     const age = parseFloat(patientAge);
-    const row = sr.data.find(
+    const bracket = sr.data.find((b) => age >= parseFloat(b.minAge) && age <= parseFloat(b.maxAge));
+    tiers = bracket?.tiers || [];
+  } else if (sr.type === "gender" && patientGender && sr.data) {
+    tiers = sr.data[patientGender] || [];
+  } else if (sr.type === "combined" && patientAge && patientGender && Array.isArray(sr.data)) {
+    const age = parseFloat(patientAge);
+    const bracket = sr.data.find(
+      (b) => b.gender === patientGender && age >= parseFloat(b.minAge) && age <= parseFloat(b.maxAge),
+    );
+    tiers = bracket?.tiers || [];
+  }
+  if (!tiers || tiers.length === 0) return null;
+  return { mode, tiers };
+}
+
+// Backwards-compatible alias used by older callers expecting {min,max}
+export function getStandardRange(field, patientAge, patientGender) {
+  const info = getStandardRangeInfo(field, patientAge, patientGender);
+  if (!info || info.mode !== "range") return null;
+  return { min: info.min, max: info.max };
+}
+
+// Given a value and range info, return a status descriptor.
+// { kind: "range", status: "low"|"normal"|"high" }
+// { kind: "tagged", status: "low"|"high"|"normal"|"tag", label }
+export function evaluateStatus(value, rangeInfo) {
+  if (!rangeInfo || value === "" || value === null || value === undefined) return null;
+  const v = parseFloat(value);
+  if (isNaN(v)) return null;
+
+  if (rangeInfo.mode === "range") {
+    let status = "normal";
+    if (v < rangeInfo.min) status = "low";
+    else if (v > rangeInfo.max) status = "high";
+    return { kind: "range", status };
+  }
+
+  // tagged
+  const tier = rangeInfo.tiers.find((t) => v >= parseFloat(t.min) && v <= parseFloat(t.max));
+  if (!tier) return null;
+  const label = (tier.label || "").toLowerCase();
+  let status = "tag";
+  if (/low/.test(label)) status = "low";
+  else if (/high/.test(label)) status = "high";
+  else if (/normal|unremarkable|negative/.test(label)) status = "normal";
+  return { kind: "tagged", status, label: tier.label };
+}
+
+// Kept for any external callers that used the old simple status helper.
+export function getRangeStatus(value, range) {
+  if (!range) return "neutral";
+  const res = evaluateStatus(value, { mode: "range", ...range });
+  return res ? res.status : "neutral";
+}
+
+// ─── Reference Value Logic (text/textarea fields) ─────────────────────────────
+export function getReferenceValue(field, patientAge, patientGender) {
+  const rv = field.referenceValue;
+  if (!rv || rv.type === "none") return null;
+  if (rv.type === "simple") return rv.data?.value || null;
+  if (rv.type === "age" && patientAge && Array.isArray(rv.data)) {
+    const age = parseFloat(patientAge);
+    const row = rv.data.find((r) => age >= parseFloat(r.minAge) && age <= parseFloat(r.maxAge));
+    return row?.value || null;
+  }
+  if (rv.type === "gender" && patientGender && rv.data) {
+    return rv.data[patientGender]?.value || null;
+  }
+  if (rv.type === "combined" && patientAge && patientGender && Array.isArray(rv.data)) {
+    const age = parseFloat(patientAge);
+    const row = rv.data.find(
       (r) => r.gender === patientGender && age >= parseFloat(r.minAge) && age <= parseFloat(r.maxAge),
     );
-    if (row) return { min: parseFloat(row.minValue), max: parseFloat(row.maxValue) };
+    return row?.value || null;
   }
   return null;
 }
 
-export function getRangeStatus(value, range) {
-  if (!range || value === "" || value === null || value === undefined) return "neutral";
-  const v = parseFloat(value);
-  if (isNaN(v)) return "neutral";
-  if (v < range.min) return "low";
-  if (v > range.max) return "high";
-  return "normal";
-}
-
+// Hydrates form `values` state from a previously-saved report payload.
+// report[sectionName] = { ...fieldEntries, __showTitle }
 export function hydrateValuesFromReport(schema, existingReport) {
   if (!existingReport || !schema?.sections) return {};
   const values = {};
@@ -318,6 +409,8 @@ function RangeTooltip({ field }) {
   const [open, setOpen] = useState(false);
   const sr = field.standardRange;
   if (!sr || sr.type === "none") return null;
+  const mode = sr.mode || "range";
+
   return (
     <div className="sr2-tip-wrap" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
       <button className="sr2-info-btn" type="button">
@@ -325,13 +418,15 @@ function RangeTooltip({ field }) {
       </button>
       {open && (
         <div className="sr2-tip-box">
-          <div className="sr2-tip-title">Reference Ranges</div>
-          {sr.type === "simple" && (
+          <div className="sr2-tip-title">{mode === "tagged" ? "Reference Tiers" : "Reference Ranges"}</div>
+
+          {mode === "range" && sr.type === "simple" && sr.data && (
             <div className="sr2-tip-row">
               {sr.data.min} – {sr.data.max} {field.unit || ""}
             </div>
           )}
-          {sr.type === "age" &&
+          {mode === "range" &&
+            sr.type === "age" &&
             Array.isArray(sr.data) &&
             sr.data.map((r, i) => (
               <div key={i} className="sr2-tip-row">
@@ -341,7 +436,8 @@ function RangeTooltip({ field }) {
                 </span>
               </div>
             ))}
-          {sr.type === "gender" &&
+          {mode === "range" &&
+            sr.type === "gender" &&
             sr.data &&
             Object.entries(sr.data).map(([g, v]) => (
               <div key={g} className="sr2-tip-row" style={{ textTransform: "capitalize" }}>
@@ -351,7 +447,8 @@ function RangeTooltip({ field }) {
                 </span>
               </div>
             ))}
-          {sr.type === "combined" &&
+          {mode === "range" &&
+            sr.type === "combined" &&
             Array.isArray(sr.data) &&
             sr.data.map((r, i) => (
               <div key={i} className="sr2-tip-row" style={{ textTransform: "capitalize" }}>
@@ -361,6 +458,73 @@ function RangeTooltip({ field }) {
                 </span>
               </div>
             ))}
+
+          {mode === "tagged" &&
+            sr.type === "simple" &&
+            Array.isArray(sr.data) &&
+            sr.data.map((t, i) => (
+              <div key={i} className="sr2-tip-row">
+                {t.label}:{" "}
+                <span>
+                  {t.min}–{t.max}
+                </span>
+              </div>
+            ))}
+          {mode === "tagged" &&
+            sr.type === "age" &&
+            Array.isArray(sr.data) &&
+            sr.data.map((b, i) => (
+              <div key={i}>
+                <div className="sr2-tip-sub">
+                  Age {b.minAge}–{b.maxAge === 999 ? "∞" : b.maxAge}
+                </div>
+                {(b.tiers || []).map((t, j) => (
+                  <div key={j} className="sr2-tip-row">
+                    {t.label}:{" "}
+                    <span>
+                      {t.min}–{t.max}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          {mode === "tagged" &&
+            sr.type === "gender" &&
+            sr.data &&
+            Object.entries(sr.data).map(([g, tiers]) => (
+              <div key={g}>
+                <div className="sr2-tip-sub" style={{ textTransform: "capitalize" }}>
+                  {g}
+                </div>
+                {(tiers || []).map((t, j) => (
+                  <div key={j} className="sr2-tip-row">
+                    {t.label}:{" "}
+                    <span>
+                      {t.min}–{t.max}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          {mode === "tagged" &&
+            sr.type === "combined" &&
+            Array.isArray(sr.data) &&
+            sr.data.map((b, i) => (
+              <div key={i}>
+                <div className="sr2-tip-sub" style={{ textTransform: "capitalize" }}>
+                  {b.gender}, {b.minAge}–{b.maxAge === 999 ? "∞" : b.maxAge}yr
+                </div>
+                {(b.tiers || []).map((t, j) => (
+                  <div key={j} className="sr2-tip-row">
+                    {t.label}:{" "}
+                    <span>
+                      {t.min}–{t.max}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
+
           <div className="sr2-tip-arrow" />
         </div>
       )}
@@ -457,14 +621,17 @@ function PatientForm({ patient, onChange }) {
 // ─── Number Field ─────────────────────────────────────────────────────────────
 
 function NumberField({ field, value, onChange, error, patientAge, patientGender }) {
-  const range = getStandardRange(field, patientAge, patientGender);
-  const status = getRangeStatus(value, range);
+  const rangeInfo = getStandardRangeInfo(field, patientAge, patientGender);
+  const evaluated = evaluateStatus(value, rangeInfo);
   const hasValue = value !== "" && value !== null && value !== undefined;
 
   let cls = "sr2-field-wrap";
   if (error) cls += " err";
-  else if (hasValue && range && status !== "neutral") cls += ` ${status === "normal" ? "ok" : status}`;
+  else if (hasValue && evaluated) cls += ` ${evaluated.status === "normal" ? "ok" : evaluated.status}`;
   if (hasValue) cls += " floated";
+
+  const rangeText =
+    rangeInfo?.mode === "range" ? `${rangeInfo.min}–${rangeInfo.max}${field.unit ? ` ${field.unit}` : ""}` : null;
 
   return (
     <div>
@@ -484,23 +651,35 @@ function NumberField({ field, value, onChange, error, patientAge, patientGender 
         {field.unit && <span className="sr2-unit">{field.unit}</span>}
       </div>
       <div className="sr2-range-row">
-        {range ? (
+        {rangeText ? (
           <span className="sr2-range-text">
-            Ref:{" "}
-            <span>
-              {range.min}–{range.max}
-              {field.unit ? ` ${field.unit}` : ""}
-            </span>
+            Ref: <span>{rangeText}</span>
           </span>
+        ) : rangeInfo?.mode === "tagged" ? (
+          <span className="sr2-range-text">Tiered ref.</span>
         ) : (
           <span className="sr2-range-text">—</span>
         )}
-        {hasValue && range && status !== "neutral" && (
-          <span className={`sr2-badge ${status === "normal" ? "ok" : status}`}>
-            {status === "normal" && <CheckCircle2 style={{ width: 9, height: 9 }} />}
-            {status === "low" && <TrendingDown style={{ width: 9, height: 9 }} />}
-            {status === "high" && <TrendingUp style={{ width: 9, height: 9 }} />}
-            {status === "normal" ? "Normal" : status === "low" ? "Low" : "High"}
+        {hasValue && evaluated && evaluated.kind === "range" && evaluated.status !== "normal" && (
+          <span className={`sr2-badge ${evaluated.status}`}>
+            {evaluated.status === "low" && <TrendingDown style={{ width: 9, height: 9 }} />}
+            {evaluated.status === "high" && <TrendingUp style={{ width: 9, height: 9 }} />}
+            {evaluated.status === "low" ? "Low" : "High"}
+          </span>
+        )}
+        {hasValue && evaluated && evaluated.kind === "range" && evaluated.status === "normal" && (
+          <span className="sr2-badge ok">
+            <CheckCircle2 style={{ width: 9, height: 9 }} />
+            Normal
+          </span>
+        )}
+        {hasValue && evaluated && evaluated.kind === "tagged" && (
+          <span className={`sr2-badge ${evaluated.status === "tag" ? "tag" : evaluated.status}`}>
+            {evaluated.status === "low" && <TrendingDown style={{ width: 9, height: 9 }} />}
+            {evaluated.status === "high" && <TrendingUp style={{ width: 9, height: 9 }} />}
+            {evaluated.status === "normal" && <CheckCircle2 style={{ width: 9, height: 9 }} />}
+            {evaluated.status === "tag" && <Tag style={{ width: 9, height: 9 }} />}
+            {evaluated.label}
           </span>
         )}
         <RangeTooltip field={field} />
@@ -565,7 +744,6 @@ function DropdownField({ field, options = [], value, onChange, error }) {
   const [open, setOpen] = useState(false);
   const floated = !!value;
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e) => {
@@ -675,9 +853,28 @@ function CheckboxField({ field, options = [], value = [], onChange, error }) {
   );
 }
 
+// ─── Reference-value row (shared by Textarea & Text Input) ───────────────────
+
+function ReferenceValueRow({ field, patientAge, patientGender }) {
+  const refValue = getReferenceValue(field, patientAge, patientGender);
+  if (!refValue) return null;
+  return (
+    <div className="sr2-ref-row">
+      <span className="sr2-ref-text">
+        <Tag style={{ width: 9, height: 9 }} />
+        Ref: <span>{refValue}</span>
+      </span>
+    </div>
+  );
+}
+
 // ─── Textarea ─────────────────────────────────────────────────────────────────
 
-function TextareaField({ field, value, onChange, error }) {
+function TextareaField({ field, value, onChange, error, patientAge, patientGender }) {
+  // Fall back to the same 200-char default the builder assumes, so a schema
+  // saved with a missing/invalid maxLength (null, 0, NaN, undefined) doesn't
+  // render "12/null" or silently lift the character limit.
+  const maxLength = field.maxLength || 200;
   const floated = !!(value && value.length > 0);
   return (
     <div>
@@ -689,22 +886,25 @@ function TextareaField({ field, value, onChange, error }) {
         <textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          maxLength={field.maxLength}
+          maxLength={maxLength}
           rows={3}
           placeholder=" "
           className="sr2-ta"
         />
         <div className="sr2-char">
-          {(value || "").length}/{field.maxLength}
+          {(value || "").length}/{maxLength}
         </div>
       </div>
+      <ReferenceValueRow field={field} patientAge={patientAge} patientGender={patientGender} />
     </div>
   );
 }
 
 // ─── Text Input ───────────────────────────────────────────────────────────────
 
-function TextInputField({ field, value, onChange, error }) {
+function TextInputField({ field, value, onChange, error, patientAge, patientGender }) {
+  // Same fallback as TextareaField above.
+  const maxLength = field.maxLength || 200;
   const floated = !!(value && value.length > 0);
   return (
     <div>
@@ -717,21 +917,22 @@ function TextInputField({ field, value, onChange, error }) {
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          maxLength={field.maxLength}
+          maxLength={maxLength}
           placeholder=" "
           className="sr2-ti"
         />
         <div className="sr2-char" style={{ position: "absolute", right: 0, bottom: 0, padding: "2px 10px 4px" }}>
-          {(value || "").length}/{field.maxLength}
+          {(value || "").length}/{maxLength}
         </div>
       </div>
+      <ReferenceValueRow field={field} patientAge={patientAge} patientGender={patientGender} />
     </div>
   );
 }
 
 // ─── Section Panel ────────────────────────────────────────────────────────────
 
-function SectionPanel({ section, sectionIndex, values, onChange, errors, patientAge, patientGender, hideTitle }) {
+function SectionPanel({ section, sectionIndex, values, onChange, errors, patientAge, patientGender }) {
   const [collapsed, setCollapsed] = useState(false);
   const fieldCount = section.fields.length;
   const filledCount = section.fields.filter((f) => {
@@ -789,10 +990,24 @@ function SectionPanel({ section, sectionIndex, values, onChange, errors, patient
               />
             )}
             {field.type === "textarea" && (
-              <TextareaField field={field} value={val} onChange={(v) => onChange(key, v)} error={err} />
+              <TextareaField
+                field={field}
+                value={val}
+                onChange={(v) => onChange(key, v)}
+                error={err}
+                patientAge={patientAge}
+                patientGender={patientGender}
+              />
             )}
             {field.type === "input" && (
-              <TextInputField field={field} value={val} onChange={(v) => onChange(key, v)} error={err} />
+              <TextInputField
+                field={field}
+                value={val}
+                onChange={(v) => onChange(key, v)}
+                error={err}
+                patientAge={patientAge}
+                patientGender={patientGender}
+              />
             )}
           </div>
         );
@@ -800,8 +1015,13 @@ function SectionPanel({ section, sectionIndex, values, onChange, errors, patient
     </div>
   );
 
-  if (hideTitle) return <div style={{ background: "var(--c-surface)", borderRadius: "var(--radius-lg)" }}>{grid}</div>;
-
+  // NOTE: `section.showTitleInReport` only controls whether the section
+  // heading appears in the *generated report* (see buildPayload's
+  // `__showTitle`, consumed by the report-rendering view). It must never
+  // hide this interactive header, since that's the only way to
+  // collapse/expand a section and see its fill/error state while actually
+  // entering data — both here in the live preview and in the real
+  // ReportUpload data-entry form.
   return (
     <div className={`sr2-section ${hasError ? "has-error" : ""}`}>
       <button
@@ -834,16 +1054,25 @@ function buildPayload(schema, values, patient) {
       const key = `${si}_${field.name}`;
       const val = values[key];
       if (val !== "" && val !== undefined && val !== null && !(Array.isArray(val) && val.length === 0)) {
-        sd[field.name] = {
+        const entry = {
           value: val,
           ...(field.unit ? { unit: field.unit } : {}),
-          ...(field.type === "number"
-            ? (() => {
-                const range = getStandardRange(field, patient.age, patient.gender);
-                return range ? { referenceRange: `${range.min}–${range.max}` } : {};
-              })()
-            : {}),
         };
+
+        if (field.type === "number") {
+          const rangeInfo = getStandardRangeInfo(field, patient.age, patient.gender);
+          if (rangeInfo?.mode === "range") {
+            entry.referenceRange = `${rangeInfo.min}–${rangeInfo.max}`;
+          } else if (rangeInfo?.mode === "tagged") {
+            const evaluated = evaluateStatus(val, rangeInfo);
+            if (evaluated) entry.referenceTag = evaluated.label;
+          }
+        } else if (field.type === "input" || field.type === "textarea") {
+          const refValue = getReferenceValue(field, patient.age, patient.gender);
+          if (refValue) entry.referenceValue = refValue;
+        }
+
+        sd[field.name] = entry;
       }
     });
     if (Object.keys(sd).length > 0) report[sec.name] = { ...sd, __showTitle: sec.showTitleInReport !== false };
@@ -928,16 +1157,16 @@ function SchemaRenderer({ schema, onSubmit, loading = false }) {
   }).length;
   const progress = totalFields > 0 ? (totalFilled / totalFields) * 100 : null;
 
-  const numStatuses = schema.sections.flatMap((sec, si) =>
+  const numEvaluations = schema.sections.flatMap((sec, si) =>
     sec.fields
       .filter((f) => f.type === "number")
       .map((f) => {
-        const range = getStandardRange(f, patient.age, patient.gender);
-        return getRangeStatus(values[`${si}_${f.name}`], range);
+        const rangeInfo = getStandardRangeInfo(f, patient.age, patient.gender);
+        return evaluateStatus(values[`${si}_${f.name}`], rangeInfo);
       }),
   );
-  const abnormalCount = numStatuses.filter((s) => s === "high" || s === "low").length;
-  const normalCount = numStatuses.filter((s) => s === "normal").length;
+  const abnormalCount = numEvaluations.filter((e) => e && (e.status === "high" || e.status === "low")).length;
+  const normalCount = numEvaluations.filter((e) => e && e.status === "normal").length;
 
   if (!hasFields) {
     return (
@@ -967,13 +1196,8 @@ function SchemaRenderer({ schema, onSubmit, loading = false }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="sr2-meta">
                 <span style={{ fontFamily: "'JetBrains Mono',monospace" }}>Lab Report Entry</span>
-                <span className="sr2-meta-dot" />
-                <span style={{ color: schema.isActive ? "var(--c-green)" : "var(--c-ink-4)" }}>
-                  {schema.isActive ? "● Active" : "○ Inactive"}
-                </span>
               </div>
-              <h1 className="sr2-title">{schema.name || "Untitled Schema"}</h1>
-              {schema.description && <p className="sr2-desc">{schema.description}</p>}
+              <h1 className="sr2-title">{schema.description || "Lab Report"}</h1>
             </div>
           </div>
 
@@ -1045,7 +1269,6 @@ function SchemaRenderer({ schema, onSubmit, loading = false }) {
               errors={errors}
               patientAge={patient.age}
               patientGender={patient.gender}
-              hideTitle={section.showTitleInReport === false}
             />
           ))}
         </div>
@@ -1088,7 +1311,7 @@ function SchemaRenderer({ schema, onSubmit, loading = false }) {
             </button>
             <button type="button" className="sr2-btn-primary" disabled={loading} onClick={handleSubmit}>
               {loading ? <span className="sr2-spin-dot" /> : <Send style={{ width: 14, height: 14 }} />}
-              {loading ? <LoadingScreen/> : "Submit Report"}
+              {loading ? "Submitting…" : "Submit Report"}
             </button>
           </div>
         </div>

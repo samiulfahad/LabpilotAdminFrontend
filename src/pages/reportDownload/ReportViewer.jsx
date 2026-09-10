@@ -20,6 +20,7 @@ import {
   CheckCircle2,
   FileText,
   Loader2,
+  Tag,
 } from "lucide-react";
 import { ReportPDFDocument } from "./ReportPDF";
 
@@ -46,35 +47,57 @@ const EMPTY_PATIENT = {
 // ── Keys inside report that are metadata, not sections ────────────────────────
 const REPORT_META_KEYS = new Set(["_id", "name", "reportDate", "sampleCollectionDate"]);
 
+// ── Status resolution ──────────────────────────────────────────────────────
+// Number fields carry ONE of two reference sources, set by SchemaRenderer's
+// buildPayload() depending on the field's standardRange.mode:
+//   - "range"  mode -> entry.referenceRange = "min–max" (numeric)
+//   - "tagged" mode -> entry.referenceTag   = tier label (e.g. "Low", "Turbid")
+// Both must be checked — a tagged field has no referenceRange at all.
 function parseRange(ref) {
   if (!ref) return null;
   const m = ref.match(/^([\d.]+)\s*[–\-]\s*([\d.]+)$/);
   if (!m) return null;
   return { min: parseFloat(m[1]), max: parseFloat(m[2]) };
 }
-function getStatus(value, ref) {
-  const n = parseFloat(value);
-  if (isNaN(n) || !ref) return null;
-  const r = parseRange(ref);
+
+// Tagged tiers store a free-text label instead of a numeric range. Map the
+// common ones onto the same low/high/normal vocabulary the range mode uses;
+// anything else (custom tier names) falls back to a neutral "tag" status.
+function statusFromTag(tag) {
+  const label = (tag || "").toLowerCase();
+  if (/low/.test(label)) return "low";
+  if (/high/.test(label)) return "high";
+  if (/normal|unremarkable|negative/.test(label)) return "normal";
+  return "tag";
+}
+
+function getStatus(field) {
+  if (!field) return null;
+  if (field.referenceTag) return statusFromTag(field.referenceTag);
+  const n = parseFloat(field.value);
+  if (isNaN(n) || !field.referenceRange) return null;
+  const r = parseRange(field.referenceRange);
   if (!r) return null;
   if (n < r.min) return "low";
   if (n > r.max) return "high";
   return "normal";
 }
+
 function isResultField(field) {
   if (!field || typeof field !== "object") return false;
-  return Boolean(field.referenceRange) || Boolean(field.unit);
+  return Boolean(field.referenceRange) || Boolean(field.referenceTag) || Boolean(field.unit);
 }
 function getSectionEntries(sectionData) {
   return Object.entries(sectionData).filter(([key]) => key !== "__showTitle");
 }
 
-function StatusPill({ status }) {
+function StatusPill({ status, label }) {
   if (!status) return <span className="text-xs text-slate-300">—</span>;
   const cfg = {
     normal: { label: "Normal", cls: "bg-emerald-50 text-emerald-700 border-emerald-200", Icon: CheckCircle2 },
     low: { label: "Low", cls: "bg-amber-50 text-amber-700 border-amber-200", Icon: TrendingDown },
     high: { label: "High", cls: "bg-red-50 text-red-700 border-red-200", Icon: TrendingUp },
+    tag: { label: label || "—", cls: "bg-violet-50 text-violet-700 border-violet-200", Icon: Tag },
   }[status];
   if (!cfg) return <span className="text-xs text-slate-300">—</span>;
   return (
@@ -88,8 +111,8 @@ function StatusPill({ status }) {
 function ResultRow({ name, field, hasUnits }) {
   const value = String(field.value ?? "");
   const unit = field.unit || "";
-  const ref = field.referenceRange || "";
-  const status = getStatus(value, ref);
+  const ref = field.referenceRange || field.referenceTag || "";
+  const status = getStatus(field);
   const isAb = status === "low" || status === "high";
   return (
     <tr className={isAb ? "bg-red-50/50" : "odd:bg-white even:bg-slate-50/30"}>
@@ -108,7 +131,7 @@ function ResultRow({ name, field, hasUnits }) {
         {ref || <span className="text-slate-300">—</span>}
       </td>
       <td className="px-3 pr-4 py-2.5 border-b border-slate-100">
-        <StatusPill status={status} />
+        <StatusPill status={status} label={field.referenceTag} />
       </td>
     </tr>
   );
@@ -116,11 +139,13 @@ function ResultRow({ name, field, hasUnits }) {
 
 function PlainRow({ name, field, colSpan }) {
   const val = Array.isArray(field.value) ? field.value.join(", ") : String(field.value ?? "—");
+  const refValue = field.referenceValue || "";
   return (
     <tr className="odd:bg-white even:bg-slate-50/30">
       <td className="pl-4 pr-3 py-2.5 text-sm text-slate-500 border-b border-slate-100">{name}</td>
       <td className="px-3 pr-4 py-2.5 text-sm font-semibold text-slate-800 border-b border-slate-100" colSpan={colSpan}>
         {val || "—"}
+        {refValue && <span className="ml-2 text-xs font-normal text-violet-500">Ref: {refValue}</span>}
       </td>
     </tr>
   );
@@ -209,7 +234,7 @@ function SummaryStrip({ sections }) {
   sections.forEach(([, sec]) => {
     getSectionEntries(sec).forEach(([, field]) => {
       if (!isResultField(field)) return;
-      const s = getStatus(field.value, field.referenceRange);
+      const s = getStatus(field);
       if (s === "normal") normal++;
       else if (s === "low") low++;
       else if (s === "high") high++;
@@ -275,9 +300,10 @@ function PatientGrid({ patient }) {
 function buildPrintHTML({ reportName, shortId, patient, labInfo, sections, printType }) {
   const isPad = printType === "PAD";
 
-  const statusLabel = (s) => ({ normal: "Normal", low: "↓ Low", high: "↑ High" })[s] || "—";
-  const statusColor = (s) => ({ normal: "#059669", low: "#d97706", high: "#dc2626" })[s] || "#94a3b8";
-  const statusBg = (s) => ({ normal: "#f0fdf4", low: "#fffbeb", high: "#fef2f2" })[s] || "white";
+  const statusLabel = (st, field) =>
+    st === "tag" ? field?.referenceTag || "—" : { normal: "Normal", low: "↓ Low", high: "↑ High" }[st] || "—";
+  const statusColor = (st) => ({ normal: "#059669", low: "#d97706", high: "#dc2626", tag: "#7c3aed" })[st] || "#94a3b8";
+  const statusBg = (st) => ({ normal: "#f0fdf4", low: "#fffbeb", high: "#fef2f2", tag: "#f5f3ff" })[st] || "white";
 
   const renderSection = (sectionName, sectionData, index) => {
     const showHeader = sectionData.__showTitle !== false;
@@ -291,22 +317,25 @@ function buildPrintHTML({ reportName, shortId, patient, labInfo, sections, print
     const resultRows = resultEntries
       .map(([name, field]) => {
         const unit = field.unit || "";
-        const ref = field.referenceRange || "";
-        const status = getStatus(field.value, ref);
+        const ref = field.referenceRange || field.referenceTag || "";
+        const status = getStatus(field);
         const isAb = status === "low" || status === "high";
         return `<tr style="background:${isAb ? "#fff1f2" : "white"};">
         <td style="padding:7px 12px;font-size:12px;color:#374151;border-bottom:1px solid #f1f5f9;">${name}</td>
         <td style="padding:7px 12px;font-size:12px;font-weight:700;color:${isAb ? "#b91c1c" : "#111827"};border-bottom:1px solid #f1f5f9;">${field.value}</td>
         ${hasUnits ? `<td style="padding:7px 12px;font-size:10px;font-weight:600;color:#64748b;text-transform:uppercase;border-bottom:1px solid #f1f5f9;">${unit || "—"}</td>` : ""}
         <td style="padding:7px 12px;font-size:11px;color:#6b7280;border-bottom:1px solid #f1f5f9;">${ref || "—"}</td>
-        <td style="padding:7px 12px;border-bottom:1px solid #f1f5f9;"><span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:99px;border:1px solid;background:${statusBg(status)};color:${statusColor(status)};border-color:${statusColor(status)}40;">${statusLabel(status)}</span></td>
+        <td style="padding:7px 12px;border-bottom:1px solid #f1f5f9;"><span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:99px;border:1px solid;background:${statusBg(status)};color:${statusColor(status)};border-color:${statusColor(status)}40;">${statusLabel(status, field)}</span></td>
       </tr>`;
       })
       .join("");
     const plainRows = plainEntries
       .map(([name, field]) => {
         const val = Array.isArray(field.value) ? field.value.join(", ") : String(field.value ?? "—");
-        return `<tr style="background:white;"><td style="padding:7px 12px;font-size:12px;color:#6b7280;border-bottom:1px solid #f1f5f9;">${name}</td><td style="padding:7px 12px;font-size:12px;font-weight:600;color:#111827;border-bottom:1px solid #f1f5f9;" colspan="${hasUnits ? 4 : 3}">${val || "—"}</td></tr>`;
+        const refValue = field.referenceValue
+          ? ` <span style="color:#7c3aed;font-weight:400;font-size:10px;">(Ref: ${field.referenceValue})</span>`
+          : "";
+        return `<tr style="background:white;"><td style="padding:7px 12px;font-size:12px;color:#6b7280;border-bottom:1px solid #f1f5f9;">${name}</td><td style="padding:7px 12px;font-size:12px;font-weight:600;color:#111827;border-bottom:1px solid #f1f5f9;" colspan="${hasUnits ? 4 : 3}">${val || "—"}${refValue}</td></tr>`;
       })
       .join("");
     const headerHTML = showHeader
@@ -335,7 +364,7 @@ function buildPrintHTML({ reportName, shortId, patient, labInfo, sections, print
   sections.forEach(([, sec]) => {
     getSectionEntries(sec).forEach(([, field]) => {
       if (!isResultField(field)) return;
-      const s = getStatus(field.value, field.referenceRange);
+      const s = getStatus(field);
       if (s === "normal") normal++;
       else if (s === "low") low++;
       else if (s === "high") high++;

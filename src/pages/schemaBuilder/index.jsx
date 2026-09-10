@@ -26,6 +26,8 @@ import {
   Info,
   Eye,
   EyeOff,
+  Tags,
+  SlidersHorizontal,
 } from "lucide-react";
 
 // ─── Zustand Store ────────────────────────────────────────────────────────────
@@ -36,6 +38,9 @@ const INITIAL_SCHEMA = {
   staticStandardRange: "",
   sections: [{ id: Date.now(), name: "Section A", showTitleInReport: true, fields: [] }],
 };
+
+const emptyStandardRange = () => ({ type: "none", mode: "range", data: {} });
+const emptyReferenceValue = () => ({ type: "none", data: {} });
 
 const useSchemaStore = create((set, get) => ({
   tests: [],
@@ -105,7 +110,8 @@ const useSchemaStore = create((set, get) => ({
                     name: "",
                     type: "number",
                     required: false,
-                    standardRange: { type: "none", data: {} },
+                    standardRange: emptyStandardRange(),
+                    referenceValue: emptyReferenceValue(),
                     unit: "",
                     options: [],
                     maxLength: 200,
@@ -140,7 +146,9 @@ const useSchemaStore = create((set, get) => ({
       fieldErrors: key === "name" ? { ...s.fieldErrors, [fieldId]: undefined } : s.fieldErrors,
     })),
 
-  updateFieldStandardRange: (sectionId, fieldId, rangeType, data) =>
+  // scope: "none" | "simple" | "age" | "gender" | "combined"
+  // mode: "range" | "tagged"
+  updateFieldStandardRange: (sectionId, fieldId, scope, mode, data) =>
     set((s) => ({
       schema: {
         ...s.schema,
@@ -149,8 +157,24 @@ const useSchemaStore = create((set, get) => ({
             ? {
                 ...sec,
                 fields: sec.fields.map((f) =>
-                  f.id === fieldId ? { ...f, standardRange: { type: rangeType, data } } : f,
+                  f.id === fieldId ? { ...f, standardRange: { type: scope, mode, data } } : f,
                 ),
+              }
+            : sec,
+        ),
+      },
+    })),
+
+  // scope: "none" | "simple" | "age" | "gender" | "combined"
+  updateFieldReferenceValue: (sectionId, fieldId, scope, data) =>
+    set((s) => ({
+      schema: {
+        ...s.schema,
+        sections: s.schema.sections.map((sec) =>
+          sec.id === sectionId
+            ? {
+                ...sec,
+                fields: sec.fields.map((f) => (f.id === fieldId ? { ...f, referenceValue: { type: scope, data } } : f)),
               }
             : sec,
         ),
@@ -168,7 +192,7 @@ const FIELD_TYPES = [
   { value: "input", label: "Text", icon: Type },
 ];
 
-const RANGE_TYPES = [
+const RANGE_SCOPES = [
   { value: "none", label: "None" },
   { value: "simple", label: "Simple" },
   { value: "age", label: "Age Based" },
@@ -176,10 +200,38 @@ const RANGE_TYPES = [
   { value: "combined", label: "Complex (Age + Gender)" },
 ];
 
+const RANGE_MODES = [
+  { value: "range", label: "Min / Max", icon: SlidersHorizontal },
+  { value: "tagged", label: "Tagged Tiers", icon: Tags },
+];
+
+// Shared gender list — keep the "other" bucket in sync everywhere gender-scoped
+// ranges/reference values are configured. The renderer picks these buckets up
+// generically via `data[patientGender]`, so no renderer changes are needed
+// when this list changes.
+const GENDER_OPTIONS = [
+  { value: "male", label: "Male", symbol: "♂", classes: "bg-blue-100 text-blue-600" },
+  { value: "female", label: "Female", symbol: "♀", classes: "bg-pink-100 text-pink-600" },
+  { value: "other", label: "Other", symbol: "⚧", classes: "bg-purple-100 text-purple-600" },
+];
+
 const fieldTypeIcon = (type) => {
   const ft = FIELD_TYPES.find((f) => f.value === type);
   return ft ? ft.icon : Hash;
 };
+
+const defaultDataForScope = (scope, mode) => {
+  if (mode === "tagged") {
+    if (scope === "age" || scope === "combined") return [];
+    if (scope === "gender") return { male: [], female: [], other: [] };
+    return []; // simple / none -> flat tier list
+  }
+  if (scope === "age" || scope === "combined") return [];
+  if (scope === "gender") return {};
+  return {}; // simple / none
+};
+
+const newTier = () => ({ id: Date.now() + Math.random(), label: "", min: "", max: "" });
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
@@ -267,6 +319,8 @@ function TestSearchSelect({ tests, value, onChange, error }) {
   );
 }
 
+// ── Plain min/max range inputs (existing) ──────────────────────────────────
+
 function SimpleRangeInput({ data, onChange }) {
   return (
     <div className="grid grid-cols-2 gap-3">
@@ -348,15 +402,11 @@ function GenderRangeInput({ data = {}, onChange }) {
   const update = (gender, key, val) => onChange({ ...data, [gender]: { ...(data[gender] || {}), [key]: val } });
   return (
     <div className="space-y-3">
-      {["male", "female"].map((gender) => (
+      {GENDER_OPTIONS.map(({ value: gender, label, symbol, classes }) => (
         <div key={gender} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
           <div className="flex items-center gap-1.5 mb-2">
-            <span className="text-sm font-medium capitalize text-gray-700">{gender}</span>
-            <span
-              className={`text-xs px-2 py-0.5 rounded-full ${gender === "male" ? "bg-blue-100 text-blue-600" : "bg-pink-100 text-pink-600"}`}
-            >
-              {gender === "male" ? "♂" : "♀"}
-            </span>
+            <span className="text-sm font-medium text-gray-700">{label}</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full ${classes}`}>{symbol}</span>
           </div>
           <div className="grid grid-cols-2 gap-2">
             {["min", "max"].map((k) => (
@@ -396,6 +446,7 @@ function CombinedRangeInput({ data = [], onChange }) {
             >
               <option value="male">Male</option>
               <option value="female">Female</option>
+              <option value="other">Other</option>
             </select>
           </div>
           {[
@@ -431,6 +482,386 @@ function CombinedRangeInput({ data = [], onChange }) {
         className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium px-2 py-1 hover:bg-blue-50 rounded-md transition-colors"
       >
         <Plus className="w-3.5 h-3.5" /> Add Range
+      </button>
+    </div>
+  );
+}
+
+// ── Tagged tiers (NEW: min-max -> label buckets, e.g. Low / Normal / High) ──
+
+function TierListEditor({ tiers = [], onChange, dense }) {
+  const rows = Array.isArray(tiers) ? tiers : [];
+  const addTier = () => onChange([...rows, newTier()]);
+  const removeTier = (i) => onChange(rows.filter((_, idx) => idx !== i));
+  const update = (i, key, val) => onChange(rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
+
+  return (
+    <div className="space-y-2">
+      {rows.map((tier, i) => (
+        <div
+          key={tier.id || i}
+          className={`grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center ${dense ? "p-1.5" : "p-2"} bg-white rounded-lg border border-gray-200`}
+        >
+          <div>
+            {!dense && <label className="text-xs text-gray-400 block mb-0.5">Tag Label</label>}
+            <input
+              value={tier.label}
+              onChange={(e) => update(i, "label", e.target.value)}
+              placeholder="e.g. Low, Normal, High"
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+            />
+          </div>
+          <div className="w-20">
+            {!dense && <label className="text-xs text-gray-400 block mb-0.5">Min</label>}
+            <input
+              type="number"
+              value={tier.min}
+              onChange={(e) => update(i, "min", e.target.value)}
+              placeholder="Min"
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+            />
+          </div>
+          <div className="w-20">
+            {!dense && <label className="text-xs text-gray-400 block mb-0.5">Max</label>}
+            <input
+              type="number"
+              value={tier.max}
+              onChange={(e) => update(i, "max", e.target.value)}
+              placeholder="Max"
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+            />
+          </div>
+          <button
+            onClick={() => removeTier(i)}
+            className={`${dense ? "" : "mt-4"} p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors`}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ))}
+      <button
+        onClick={addTier}
+        className="flex items-center gap-1.5 text-xs text-teal-600 hover:text-teal-700 font-medium px-2 py-1 hover:bg-teal-50 rounded-md transition-colors"
+      >
+        <Plus className="w-3.5 h-3.5" /> Add Tag Tier
+      </button>
+    </div>
+  );
+}
+
+function TaggedSimpleInput({ data = [], onChange }) {
+  return (
+    <div className="p-2 bg-gray-50 rounded-lg border border-gray-200">
+      <TierListEditor tiers={data} onChange={onChange} />
+    </div>
+  );
+}
+
+function TaggedAgeInput({ data = [], onChange }) {
+  const brackets = Array.isArray(data) ? data : [];
+  const addBracket = () => onChange([...brackets, { minAge: "", maxAge: 999, tiers: [] }]);
+  const removeBracket = (i) => onChange(brackets.filter((_, idx) => idx !== i));
+  const update = (i, key, val) => onChange(brackets.map((b, idx) => (idx === i ? { ...b, [key]: val } : b)));
+
+  return (
+    <div className="space-y-3">
+      {brackets.map((b, i) => (
+        <div key={i} className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+          <div className="flex items-end gap-2">
+            <div className="w-24">
+              <label className="text-xs text-gray-400 block mb-0.5">Min Age</label>
+              <input
+                type="number"
+                value={b.minAge}
+                onChange={(e) => update(i, "minAge", e.target.value)}
+                className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+              />
+            </div>
+            <div className="w-24">
+              <label className="text-xs text-gray-400 block mb-0.5">Max Age</label>
+              <input
+                type="number"
+                value={b.maxAge === 999 || b.maxAge === "" ? "" : b.maxAge}
+                placeholder="∞"
+                onChange={(e) => update(i, "maxAge", e.target.value)}
+                onBlur={(e) => {
+                  if (e.target.value === "") update(i, "maxAge", 999);
+                }}
+                className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+              />
+            </div>
+            <span className="text-xs text-gray-400 pb-2">years — tags for this age bracket:</span>
+            <button
+              onClick={() => removeBracket(i)}
+              className="ml-auto p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <TierListEditor tiers={b.tiers} onChange={(tiers) => update(i, "tiers", tiers)} dense />
+        </div>
+      ))}
+      <button
+        onClick={addBracket}
+        className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium px-2 py-1 hover:bg-blue-50 rounded-md transition-colors"
+      >
+        <Plus className="w-3.5 h-3.5" /> Add Age Bracket
+      </button>
+    </div>
+  );
+}
+
+function TaggedGenderInput({ data = {}, onChange }) {
+  const update = (gender, tiers) => onChange({ ...data, [gender]: tiers });
+  return (
+    <div className="space-y-3">
+      {GENDER_OPTIONS.map(({ value: gender, label, symbol, classes }) => (
+        <div key={gender} className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-medium text-gray-700">{label}</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full ${classes}`}>{symbol}</span>
+          </div>
+          <TierListEditor tiers={data[gender] || []} onChange={(tiers) => update(gender, tiers)} dense />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TaggedCombinedInput({ data = [], onChange }) {
+  const brackets = Array.isArray(data) ? data : [];
+  const addBracket = () => onChange([...brackets, { gender: "male", minAge: "", maxAge: 999, tiers: [] }]);
+  const removeBracket = (i) => onChange(brackets.filter((_, idx) => idx !== i));
+  const update = (i, key, val) => onChange(brackets.map((b, idx) => (idx === i ? { ...b, [key]: val } : b)));
+
+  return (
+    <div className="space-y-3">
+      {brackets.map((b, i) => (
+        <div key={i} className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+          <div className="flex items-end gap-2">
+            <div className="w-24">
+              <label className="text-xs text-gray-400 block mb-0.5">Gender</label>
+              <select
+                value={b.gender}
+                onChange={(e) => update(i, "gender", e.target.value)}
+                className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+              >
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div className="w-20">
+              <label className="text-xs text-gray-400 block mb-0.5">Min Age</label>
+              <input
+                type="number"
+                value={b.minAge}
+                onChange={(e) => update(i, "minAge", e.target.value)}
+                className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+              />
+            </div>
+            <div className="w-20">
+              <label className="text-xs text-gray-400 block mb-0.5">Max Age</label>
+              <input
+                type="number"
+                value={b.maxAge === 999 || b.maxAge === "" ? "" : b.maxAge}
+                placeholder="∞"
+                onChange={(e) => update(i, "maxAge", e.target.value)}
+                onBlur={(e) => {
+                  if (e.target.value === "") update(i, "maxAge", 999);
+                }}
+                className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+              />
+            </div>
+            <button
+              onClick={() => removeBracket(i)}
+              className="ml-auto p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <TierListEditor tiers={b.tiers} onChange={(tiers) => update(i, "tiers", tiers)} dense />
+        </div>
+      ))}
+      <button
+        onClick={addBracket}
+        className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium px-2 py-1 hover:bg-blue-50 rounded-md transition-colors"
+      >
+        <Plus className="w-3.5 h-3.5" /> Add Bracket
+      </button>
+    </div>
+  );
+}
+
+// ── Reference value inputs (NEW: text fields, e.g. color=Gray as the standard) ──
+
+function RefSimpleInput({ data = {}, onChange }) {
+  return (
+    <div>
+      <label className="text-xs text-gray-500 mb-1 block">Reference / Standard Value</label>
+      <input
+        value={data.value || ""}
+        onChange={(e) => onChange({ ...data, value: e.target.value })}
+        placeholder="e.g. White, Clear, Negative"
+        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-100 focus:border-amber-400"
+      />
+    </div>
+  );
+}
+
+function RefAgeInput({ data = [], onChange }) {
+  const rows = Array.isArray(data) ? data : [];
+  const addRow = () => onChange([...rows, { minAge: "", maxAge: 999, value: "" }]);
+  const removeRow = (i) => onChange(rows.filter((_, idx) => idx !== i));
+  const update = (i, key, val) => onChange(rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
+
+  return (
+    <div className="space-y-2">
+      {rows.map((row, i) => (
+        <div
+          key={i}
+          className="grid grid-cols-[1fr_1fr_2fr_auto] gap-2 items-end p-2 bg-white rounded-lg border border-gray-200"
+        >
+          <div>
+            <label className="text-xs text-gray-400 block mb-0.5">Min Age</label>
+            <input
+              type="number"
+              value={row.minAge}
+              onChange={(e) => update(i, "minAge", e.target.value)}
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 block mb-0.5">Max Age</label>
+            <input
+              type="number"
+              value={row.maxAge === 999 || row.maxAge === "" ? "" : row.maxAge}
+              placeholder="∞"
+              onChange={(e) => update(i, "maxAge", e.target.value)}
+              onBlur={(e) => {
+                if (e.target.value === "") update(i, "maxAge", 999);
+              }}
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 block mb-0.5">Reference Value</label>
+            <input
+              value={row.value}
+              onChange={(e) => update(i, "value", e.target.value)}
+              placeholder="e.g. White"
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
+            />
+          </div>
+          <button
+            onClick={() => removeRow(i)}
+            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ))}
+      <button
+        onClick={addRow}
+        className="flex items-center gap-1.5 text-xs text-amber-600 hover:text-amber-700 font-medium px-2 py-1 hover:bg-amber-50 rounded-md transition-colors"
+      >
+        <Plus className="w-3.5 h-3.5" /> Add Age Range
+      </button>
+    </div>
+  );
+}
+
+function RefGenderInput({ data = {}, onChange }) {
+  const update = (gender, value) => onChange({ ...data, [gender]: { value } });
+  return (
+    <div className="grid grid-cols-3 gap-3">
+      {GENDER_OPTIONS.map(({ value: gender, label, symbol }) => (
+        <div key={gender}>
+          <label className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+            <span>{label}</span>
+            <span className="text-gray-400">{symbol}</span>
+          </label>
+          <input
+            value={data[gender]?.value || ""}
+            onChange={(e) => update(gender, e.target.value)}
+            placeholder="Reference value"
+            className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-300"
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RefCombinedInput({ data = [], onChange }) {
+  const rows = Array.isArray(data) ? data : [];
+  const addRow = () => onChange([...rows, { gender: "male", minAge: "", maxAge: 999, value: "" }]);
+  const removeRow = (i) => onChange(rows.filter((_, idx) => idx !== i));
+  const update = (i, key, val) => onChange(rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
+
+  return (
+    <div className="space-y-2">
+      {rows.map((row, i) => (
+        <div
+          key={i}
+          className="grid grid-cols-[1fr_1fr_1fr_2fr_auto] gap-2 items-end p-2 bg-white rounded-lg border border-gray-200"
+        >
+          <div>
+            <label className="text-xs text-gray-400 block mb-0.5">Gender</label>
+            <select
+              value={row.gender}
+              onChange={(e) => update(i, "gender", e.target.value)}
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
+            >
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 block mb-0.5">Min Age</label>
+            <input
+              type="number"
+              value={row.minAge}
+              onChange={(e) => update(i, "minAge", e.target.value)}
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 block mb-0.5">Max Age</label>
+            <input
+              type="number"
+              value={row.maxAge === 999 || row.maxAge === "" ? "" : row.maxAge}
+              placeholder="∞"
+              onChange={(e) => update(i, "maxAge", e.target.value)}
+              onBlur={(e) => {
+                if (e.target.value === "") update(i, "maxAge", 999);
+              }}
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 block mb-0.5">Reference Value</label>
+            <input
+              value={row.value}
+              onChange={(e) => update(i, "value", e.target.value)}
+              placeholder="e.g. White"
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
+            />
+          </div>
+          <button
+            onClick={() => removeRow(i)}
+            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ))}
+      <button
+        onClick={addRow}
+        className="flex items-center gap-1.5 text-xs text-amber-600 hover:text-amber-700 font-medium px-2 py-1 hover:bg-amber-50 rounded-md transition-colors"
+      >
+        <Plus className="w-3.5 h-3.5" /> Add Reference Row
       </button>
     </div>
   );
@@ -482,9 +913,131 @@ function OptionsInput({ options = [], onChange }) {
   );
 }
 
+// ── Standard Range section (number fields): mode toggle + scope + inputs ──
+
+function StandardRangeSection({ field, sectionId }) {
+  const { updateFieldStandardRange, updateField } = useSchemaStore();
+  const scope = field.standardRange?.type || "none";
+  const mode = field.standardRange?.mode || "range";
+  const data = field.standardRange?.data;
+
+  const setMode = (newMode) => {
+    if (newMode === mode) return;
+    updateFieldStandardRange(sectionId, field.id, scope, newMode, defaultDataForScope(scope, newMode));
+  };
+
+  const setScope = (newScope) => {
+    updateFieldStandardRange(sectionId, field.id, newScope, mode, defaultDataForScope(newScope, mode));
+  };
+
+  const setData = (newData) => updateFieldStandardRange(sectionId, field.id, scope, mode, newData);
+
+  return (
+    <div className="space-y-4 p-4 bg-violet-50/50 rounded-xl border border-violet-100">
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="text-xs font-medium text-gray-600 block mb-1.5">Standard Range Scope</label>
+          <select
+            value={scope}
+            onChange={(e) => setScope(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 bg-white"
+          >
+            {RANGE_SCOPES.map((rt) => (
+              <option key={rt.value} value={rt.value}>
+                {rt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-gray-600 block mb-1.5">Unit</label>
+          <input
+            value={field.unit || ""}
+            onChange={(e) => updateField(sectionId, field.id, "unit", e.target.value)}
+            placeholder="e.g. mmHg, bpm, mg/dL"
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
+          />
+        </div>
+      </div>
+
+      {scope !== "none" && (
+        <div>
+          <label className="text-xs font-medium text-gray-600 block mb-1.5">Range Mode</label>
+          <div className="inline-flex items-center gap-1 bg-white rounded-lg p-1 border border-gray-200">
+            {RANGE_MODES.map((m) => {
+              const Icon = m.icon;
+              return (
+                <button
+                  key={m.value}
+                  onClick={() => setMode(m.value)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    mode === m.value ? "bg-violet-500 text-white" : "text-gray-500 hover:bg-gray-50"
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {m.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {scope === "simple" && mode === "range" && <SimpleRangeInput data={data} onChange={setData} />}
+      {scope === "age" && mode === "range" && <AgeRangeInput data={data} onChange={setData} />}
+      {scope === "gender" && mode === "range" && <GenderRangeInput data={data} onChange={setData} />}
+      {scope === "combined" && mode === "range" && <CombinedRangeInput data={data} onChange={setData} />}
+
+      {scope === "simple" && mode === "tagged" && <TaggedSimpleInput data={data} onChange={setData} />}
+      {scope === "age" && mode === "tagged" && <TaggedAgeInput data={data} onChange={setData} />}
+      {scope === "gender" && mode === "tagged" && <TaggedGenderInput data={data} onChange={setData} />}
+      {scope === "combined" && mode === "tagged" && <TaggedCombinedInput data={data} onChange={setData} />}
+    </div>
+  );
+}
+
+// ── Reference Value section (text/textarea fields) ─────────────────────────
+
+function ReferenceValueSection({ field, sectionId }) {
+  const { updateFieldReferenceValue } = useSchemaStore();
+  const scope = field.referenceValue?.type || "none";
+  const data = field.referenceValue?.data;
+
+  const setScope = (newScope) => {
+    const shape = newScope === "age" || newScope === "combined" ? [] : {};
+    updateFieldReferenceValue(sectionId, field.id, newScope, shape);
+  };
+  const setData = (newData) => updateFieldReferenceValue(sectionId, field.id, scope, newData);
+
+  return (
+    <div className="space-y-3 p-4 bg-amber-50/50 rounded-xl border border-amber-100">
+      <div>
+        <label className="text-xs font-medium text-gray-600 block mb-1.5">Reference Value Scope</label>
+        <select
+          value={scope}
+          onChange={(e) => setScope(e.target.value)}
+          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-100 focus:border-amber-400 bg-white"
+        >
+          {RANGE_SCOPES.map((rt) => (
+            <option key={rt.value} value={rt.value}>
+              {rt.label}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-gray-400 mt-1">Shown side-by-side with the entered value in the report/preview.</p>
+      </div>
+
+      {scope === "simple" && <RefSimpleInput data={data} onChange={setData} />}
+      {scope === "age" && <RefAgeInput data={data} onChange={setData} />}
+      {scope === "gender" && <RefGenderInput data={data} onChange={setData} />}
+      {scope === "combined" && <RefCombinedInput data={data} onChange={setData} />}
+    </div>
+  );
+}
+
 function FieldCard({ field, sectionId, fieldError }) {
   const [expanded, setExpanded] = useState(true);
-  const { updateField, removeField, updateFieldStandardRange } = useSchemaStore();
+  const { updateField, removeField } = useSchemaStore();
   const Icon = fieldTypeIcon(field.type);
 
   useEffect(() => {
@@ -520,10 +1073,18 @@ function FieldCard({ field, sectionId, fieldError }) {
           <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full capitalize">
             {FIELD_TYPES.find((f) => f.value === field.type)?.label}
           </span>
+          {isNumberType && field.standardRange?.mode === "tagged" && field.standardRange?.type !== "none" && (
+            <span className="text-xs px-2 py-0.5 bg-violet-50 text-violet-500 rounded-full flex items-center gap-1">
+              <Tags className="w-3 h-3" /> Tagged
+            </span>
+          )}
+          {isTextType && field.referenceValue?.type && field.referenceValue.type !== "none" && (
+            <span className="text-xs px-2 py-0.5 bg-amber-50 text-amber-600 rounded-full">Reference set</span>
+          )}
           {field.required && <span className="text-xs px-2 py-0.5 bg-red-50 text-red-500 rounded-full">Required</span>}
           {fieldError && !expanded && (
             <span className="text-xs px-2 py-0.5 bg-red-100 text-red-600 rounded-full flex items-center gap-1">
-              <AlertCircle className="w-3 h-3" /> Name required
+              <AlertCircle className="w-3 h-3" /> {fieldError}
             </span>
           )}
           <button
@@ -567,7 +1128,8 @@ function FieldCard({ field, sectionId, fieldError }) {
                 value={field.type}
                 onChange={(e) => {
                   updateField(sectionId, field.id, "type", e.target.value);
-                  updateFieldStandardRange(sectionId, field.id, "none", {});
+                  updateField(sectionId, field.id, "standardRange", emptyStandardRange());
+                  updateField(sectionId, field.id, "referenceValue", emptyReferenceValue());
                 }}
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 bg-white"
               >
@@ -594,66 +1156,7 @@ function FieldCard({ field, sectionId, fieldError }) {
             </button>
           </div>
 
-          {isNumberType && (
-            <div className="space-y-4 p-4 bg-violet-50/50 rounded-xl border border-violet-100">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-medium text-gray-600 block mb-1.5">Standard Range Type</label>
-                  <select
-                    value={field.standardRange?.type || "none"}
-                    onChange={(e) =>
-                      updateFieldStandardRange(
-                        sectionId,
-                        field.id,
-                        e.target.value,
-                        e.target.value === "age" || e.target.value === "combined" ? [] : {},
-                      )
-                    }
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 bg-white"
-                  >
-                    {RANGE_TYPES.map((rt) => (
-                      <option key={rt.value} value={rt.value}>
-                        {rt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-gray-600 block mb-1.5">Unit</label>
-                  <input
-                    value={field.unit || ""}
-                    onChange={(e) => updateField(sectionId, field.id, "unit", e.target.value)}
-                    placeholder="e.g. mmHg, bpm, mg/dL"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
-                  />
-                </div>
-              </div>
-              {field.standardRange?.type === "simple" && (
-                <SimpleRangeInput
-                  data={field.standardRange.data}
-                  onChange={(data) => updateFieldStandardRange(sectionId, field.id, "simple", data)}
-                />
-              )}
-              {field.standardRange?.type === "age" && (
-                <AgeRangeInput
-                  data={field.standardRange.data}
-                  onChange={(data) => updateFieldStandardRange(sectionId, field.id, "age", data)}
-                />
-              )}
-              {field.standardRange?.type === "gender" && (
-                <GenderRangeInput
-                  data={field.standardRange.data}
-                  onChange={(data) => updateFieldStandardRange(sectionId, field.id, "gender", data)}
-                />
-              )}
-              {field.standardRange?.type === "combined" && (
-                <CombinedRangeInput
-                  data={field.standardRange.data}
-                  onChange={(data) => updateFieldStandardRange(sectionId, field.id, "combined", data)}
-                />
-              )}
-            </div>
-          )}
+          {isNumberType && <StandardRangeSection field={field} sectionId={sectionId} />}
 
           {isOptionType && (
             <div className="p-4 bg-emerald-50/50 rounded-xl border border-emerald-100">
@@ -666,15 +1169,21 @@ function FieldCard({ field, sectionId, fieldError }) {
           )}
 
           {isTextType && (
-            <div className="w-40">
-              <label className="text-xs font-medium text-gray-600 block mb-1.5">Max Length</label>
-              <input
-                type="number"
-                value={field.maxLength || 200}
-                onChange={(e) => updateField(sectionId, field.id, "maxLength", parseInt(e.target.value))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
-              />
-            </div>
+            <>
+              <div className="w-40">
+                <label className="text-xs font-medium text-gray-600 block mb-1.5">Max Length</label>
+                <input
+                  type="number"
+                  value={field.maxLength ?? 200}
+                  onChange={(e) => {
+                    const parsed = parseInt(e.target.value, 10);
+                    updateField(sectionId, field.id, "maxLength", Number.isNaN(parsed) ? 200 : parsed);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
+                />
+              </div>
+              <ReferenceValueSection field={field} sectionId={sectionId} />
+            </>
           )}
         </div>
       )}
@@ -682,26 +1191,37 @@ function FieldCard({ field, sectionId, fieldError }) {
   );
 }
 
-function SectionCard({ section, index, total, fieldErrors }) {
+function SectionCard({ section, index, total, fieldErrors, sectionError }) {
   const [expanded, setExpanded] = useState(true);
   const { updateSection, removeSection, addField } = useSchemaStore();
-  const hasSectionError = section.fields.some((f) => fieldErrors[f.id]);
+  const hasFieldError = section.fields.some((f) => fieldErrors[f.id]);
+  const hasError = hasFieldError || !!sectionError;
   const showTitle = section.showTitleInReport !== false;
 
   return (
     <div className="border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
       <div className="flex items-center gap-3 px-5 py-4 bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
         <div
-          className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${hasSectionError ? "bg-red-500" : "bg-blue-500"}`}
+          className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${hasError ? "bg-red-500" : "bg-blue-500"}`}
         >
           <span className="text-white text-xs font-bold">{index + 1}</span>
         </div>
-        <input
-          value={section.name}
-          onChange={(e) => updateSection(section.id, "name", e.target.value)}
-          className="flex-1 font-semibold text-gray-800 text-sm bg-transparent border-b border-transparent focus:border-blue-400 focus:outline-none pb-0.5 transition-colors"
-          placeholder="Section Name"
-        />
+        <div className="flex-1 min-w-0">
+          <input
+            value={section.name}
+            onChange={(e) => updateSection(section.id, "name", e.target.value)}
+            className={`w-full font-semibold text-gray-800 text-sm bg-transparent border-b focus:outline-none pb-0.5 transition-colors ${
+              sectionError ? "border-red-400" : "border-transparent focus:border-blue-400"
+            }`}
+            placeholder="Section Name"
+          />
+          {sectionError && (
+            <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+              <AlertCircle className="w-3 h-3" />
+              {sectionError}
+            </p>
+          )}
+        </div>
         <div className="flex items-center gap-2 ml-auto">
           <span className="text-xs text-gray-400">
             {section.fields.length} field{section.fields.length !== 1 ? "s" : ""}
@@ -808,6 +1328,27 @@ function normalizeSchema(apiSchema) {
       fields: (sec.fields || []).map((f) => ({
         ...f,
         id: f.id ?? f._id ?? Date.now() + Math.random(),
+        // Normalize maxLength so old/loaded schemas without a valid value
+        // (e.g. null, 0, NaN) fall back to the same 200 default the builder
+        // and renderer both assume.
+        maxLength: f.maxLength || 200,
+        standardRange: f.standardRange
+          ? {
+              type: f.standardRange.type || "none",
+              mode: f.standardRange.mode || "range",
+              data:
+                f.standardRange.data ||
+                (f.standardRange.type === "age" || f.standardRange.type === "combined" ? [] : {}),
+            }
+          : emptyStandardRange(),
+        referenceValue: f.referenceValue
+          ? {
+              type: f.referenceValue.type || "none",
+              data:
+                f.referenceValue.data ||
+                (f.referenceValue.type === "age" || f.referenceValue.type === "combined" ? [] : {}),
+            }
+          : emptyReferenceValue(),
       })),
     })),
   };
@@ -893,10 +1434,45 @@ export default function SchemaBuilder() {
     if (!schema.testId) errs.testId = "Please select a test";
     if (!schema.description.trim()) errs.description = "Description is required";
 
+    // Section names back the report payload keys in SchemaRenderer
+    // (report[section.name] = {...}), so duplicate or empty names would
+    // silently merge/overwrite unrelated sections' data on submit and
+    // on re-hydrating a saved report for edit.
+    const seenSections = new Map(); // normalized name -> first section id with that name
+    const sectionErrs = {};
+    schema.sections.forEach((sec) => {
+      const name = sec.name.trim();
+      if (!name) {
+        sectionErrs[sec.id] = "Section name is required";
+        return;
+      }
+      const key = name.toLowerCase();
+      if (seenSections.has(key)) {
+        sectionErrs[sec.id] = "Duplicate section name";
+        sectionErrs[seenSections.get(key)] = "Duplicate section name";
+      } else {
+        seenSections.set(key, sec.id);
+      }
+    });
+    if (Object.keys(sectionErrs).length > 0) errs.sections = sectionErrs;
+
     const fErrs = {};
     schema.sections.forEach((sec) => {
+      const seen = new Map(); // normalized name -> first field id with that name
       sec.fields.forEach((f) => {
-        if (!f.name.trim()) fErrs[f.id] = "Field name is required";
+        const name = f.name.trim();
+        if (!name) {
+          fErrs[f.id] = "Field name is required";
+          return;
+        }
+        const key = name.toLowerCase();
+        if (seen.has(key)) {
+          // flag both the first field with this name and this duplicate
+          fErrs[f.id] = "Duplicate field name in this section";
+          fErrs[seen.get(key)] = "Duplicate field name in this section";
+        } else {
+          seen.set(key, f.id);
+        }
       });
     });
     setFieldErrors(fErrs);
@@ -917,7 +1493,12 @@ export default function SchemaBuilder() {
 
   const handleSave = async () => {
     const { errs, hasFieldErrors } = validate();
-    if (Object.keys(errs).length > 0) setErrors(errs);
+    // Always sync errors into the store — including clearing to {} when the
+    // previous top-level errors have all been fixed. The old code only
+    // called setErrors when errs was non-empty, so a stale error (e.g. a
+    // fixed testId/description) would keep showing its red border/message
+    // forever even after the user corrected it.
+    setErrors(errs);
     if (Object.keys(errs).length > 0 || hasFieldErrors) return;
 
     setSaving(true);
@@ -1160,6 +1741,7 @@ export default function SchemaBuilder() {
                     index={i}
                     total={schema.sections.length}
                     fieldErrors={fieldErrors}
+                    sectionError={errors.sections?.[section.id]}
                   />
                 ))}
                 <button

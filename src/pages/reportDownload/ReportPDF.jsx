@@ -10,9 +10,11 @@ const C = {
   normal: "#059669",
   low: "#d97706",
   high: "#dc2626",
+  tag: "#7c3aed",
   lowBg: "#fffbeb",
   highBg: "#fff1f2",
   normBg: "#f0fdf4",
+  tagBg: "#f5f3ff",
 };
 
 const s = StyleSheet.create({
@@ -90,16 +92,26 @@ const s = StyleSheet.create({
   footerNote: { fontSize: 7, color: C.muted, textAlign: "center", marginTop: 4 },
 });
 
+// ── Status resolution — mirrors ReportViewer.jsx ────────────────────────────
 function parseRange(ref) {
   if (!ref) return null;
   const m = ref.match(/^([\d.]+)\s*[–\-]\s*([\d.]+)$/);
   if (!m) return null;
   return { min: parseFloat(m[1]), max: parseFloat(m[2]) };
 }
-function getStatus(value, ref) {
-  const n = parseFloat(value);
-  if (isNaN(n) || !ref) return null;
-  const r = parseRange(ref);
+function statusFromTag(tag) {
+  const label = (tag || "").toLowerCase();
+  if (/low/.test(label)) return "low";
+  if (/high/.test(label)) return "high";
+  if (/normal|unremarkable|negative/.test(label)) return "normal";
+  return "tag";
+}
+function getStatus(field) {
+  if (!field) return null;
+  if (field.referenceTag) return statusFromTag(field.referenceTag);
+  const n = parseFloat(field.value);
+  if (isNaN(n) || !field.referenceRange) return null;
+  const r = parseRange(field.referenceRange);
   if (!r) return null;
   if (n < r.min) return "low";
   if (n > r.max) return "high";
@@ -107,7 +119,7 @@ function getStatus(value, ref) {
 }
 function isResultField(field) {
   if (!field || typeof field !== "object") return false;
-  return Boolean(field.referenceRange) || Boolean(field.unit);
+  return Boolean(field.referenceRange) || Boolean(field.referenceTag) || Boolean(field.unit);
 }
 
 /** Strip meta keys (__showTitle) from section data before rendering. */
@@ -115,12 +127,13 @@ function getSectionEntries(sectionData) {
   return Object.entries(sectionData).filter(([key]) => key !== "__showTitle");
 }
 
-function Pill({ status }) {
+function Pill({ status, label }) {
   if (!status) return null;
   const cfg = {
     normal: { label: "Normal", bg: C.normBg, color: C.normal },
     low: { label: "Low", bg: C.lowBg, color: C.low },
     high: { label: "High", bg: C.highBg, color: C.high },
+    tag: { label: label || "—", bg: C.tagBg, color: C.tag },
   }[status];
   if (!cfg) return null;
   return (
@@ -172,8 +185,8 @@ function PDFSection({ sectionName, sectionData, index, showHeader }) {
           {resultEntries.map(([name, field]) => {
             const value = String(field.value ?? "");
             const unit = field.unit || "";
-            const ref = field.referenceRange || "";
-            const status = getStatus(value, ref);
+            const ref = field.referenceRange || field.referenceTag || "";
+            const status = getStatus(field);
             const isAb = status === "low" || status === "high";
             return (
               <View key={name} style={[s.tableRow, { backgroundColor: isAb ? C.highBg : "white" }]}>
@@ -182,7 +195,7 @@ function PDFSection({ sectionName, sectionData, index, showHeader }) {
                 {hasUnits && <Text style={[s.tdUnit, { width: W.unit }]}>{unit || "—"}</Text>}
                 <Text style={[s.tdMuted, { width: W.ref }]}>{ref || "—"}</Text>
                 <View style={{ width: W.status, justifyContent: "center" }}>
-                  <Pill status={status} />
+                  <Pill status={status} label={field.referenceTag} />
                 </View>
               </View>
             );
@@ -198,7 +211,12 @@ function PDFSection({ sectionName, sectionData, index, showHeader }) {
             return (
               <View key={name} style={[s.tableRow, { backgroundColor: "white" }]}>
                 <Text style={[s.tdMuted, { width: "38%" }]}>{name}</Text>
-                <Text style={[s.tdBold, { flex: 1 }]}>{val || "—"}</Text>
+                <View style={{ flex: 1, flexDirection: "row", alignItems: "center", paddingHorizontal: 8, gap: 6 }}>
+                  <Text style={[s.tdBold, { paddingHorizontal: 0 }]}>{val || "—"}</Text>
+                  {field.referenceValue ? (
+                    <Text style={{ fontSize: 7.5, color: C.tag }}>(Ref: {field.referenceValue})</Text>
+                  ) : null}
+                </View>
               </View>
             );
           })}
@@ -220,7 +238,7 @@ export function ReportPDFDocument({ report, reportName, shortId, patient, labInf
   sections.forEach(([, sec]) => {
     getSectionEntries(sec).forEach(([, field]) => {
       if (!isResultField(field)) return;
-      const st = getStatus(field.value, field.referenceRange);
+      const st = getStatus(field);
       if (st === "normal") normal++;
       else if (st === "low") low++;
       else if (st === "high") high++;

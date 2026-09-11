@@ -17,9 +17,9 @@ import {
   Tag,
 } from "lucide-react";
 
-// ─── Age Helpers (mirrors SchemaBuilder) ──────────────────────────────────
+// ─── Age Helpers ────────────────────────────────────────────────────────────
+// Data shape is always { years, months, days } — mirrors SchemaBuilder.
 const emptyAge = () => ({ years: "", months: "", days: "" });
-const AGE_NO_LIMIT = { years: 150, months: 11, days: 31 };
 const isAgeNoLimit = (age) =>
   !!age && Number(age.years) === 150 && Number(age.months) === 11 && Number(age.days) === 31;
 
@@ -35,6 +35,7 @@ function ageToValue(age) {
   return y * 365 + m * 30 + d;
 }
 
+// Compact display for bracket boundaries in the reference tooltip, e.g. "18y 6m".
 function formatAge(age) {
   if (!age) return "—";
   if (isAgeNoLimit(age)) return "∞";
@@ -47,94 +48,93 @@ function formatAge(age) {
   return parts.join(" ");
 }
 
-function AgeInputGroup({ value, onChange, isMax }) {
-  const val = value || {};
-  const displayAsEmpty = isMax && isAgeNoLimit(val);
+// Shorthand parser/formatter for the patient age field, e.g. "32y", "5y2m6d".
+// Mirrors the SchemaBuilder age input so both surfaces behave identically.
+function parseAgeShorthand(raw) {
+  const s = (raw || "").trim();
+  if (!s) return null;
+  const yMatch = s.match(/(\d+)\s*y/i);
+  const mMatch = s.match(/(\d+)\s*m/i);
+  const dMatch = s.match(/(\d+)\s*d/i);
+  let years = yMatch ? Number(yMatch[1]) : 0;
+  let months = mMatch ? Number(mMatch[1]) : 0;
+  let days = dMatch ? Number(dMatch[1]) : 0;
+  if (!yMatch && !mMatch && !dMatch) {
+    const bare = Number(s.replace(/[^\d]/g, ""));
+    if (Number.isNaN(bare)) return null;
+    years = bare;
+  }
+  return {
+    years: Math.max(0, Math.min(150, years)),
+    months: Math.max(0, Math.min(11, months)),
+    days: Math.max(0, Math.min(31, days)),
+  };
+}
 
-  const setPart = (key, max) => (e) => {
-    const raw = e.target.value;
-    if (raw === "") {
-      onChange({ ...val, [key]: "" });
+function toAgeShorthand(val) {
+  if (!val) return "";
+  const y = Number(val.years) || 0;
+  const m = Number(val.months) || 0;
+  const d = Number(val.days) || 0;
+  if (!y && !m && !d) return "";
+  return `${y ? `${y}y` : ""}${m ? `${m}m` : ""}${d ? `${d}d` : ""}`;
+}
+
+function PatientAgeInput({ value, onChange }) {
+  const val = value || {};
+  const [text, setText] = useState(toAgeShorthand(val));
+  const [focused, setFocused] = useState(false);
+
+  // Only resync from the prop while the field isn't focused, so a commit
+  // triggered by this input's own typing doesn't fight the cursor mid-edit.
+  useEffect(() => {
+    if (!focused) setText(toAgeShorthand(val));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [val.years, val.months, val.days, focused]);
+
+  const commit = (raw) => {
+    if (!raw.trim()) {
+      onChange(emptyAge());
       return;
     }
-    const num = Math.max(0, Math.min(max, Number(raw)));
-    onChange({ ...val, [key]: num });
-  };
-
-  const handleYearsBlur = () => {
-    if (isMax && (val.years === "" || val.years === undefined || val.years === null)) {
-      onChange({ ...AGE_NO_LIMIT });
-    }
+    const parsed = parseAgeShorthand(raw);
+    if (parsed) onChange(parsed); // live — reflects in the preview immediately
   };
 
   return (
-    <div className="flex items-center gap-1">
-      <input
-        type="number"
-        min={0}
-        max={150}
-        placeholder={isMax ? "∞" : "Y"}
-        title="Years"
-        value={displayAsEmpty ? "" : (val.years ?? "")}
-        onChange={setPart("years", 150)}
-        onBlur={isMax ? handleYearsBlur : undefined}
-        className="w-12 px-1.5 py-1.5 border border-gray-200 rounded-md text-xs text-center focus:outline-none focus:ring-1 focus:ring-blue-300"
-      />
-      <span className="text-[10px] text-gray-300">y</span>
-      <input
-        type="number"
-        min={0}
-        max={11}
-        placeholder="M"
-        title="Months"
-        value={displayAsEmpty ? "" : (val.months ?? "")}
-        onChange={setPart("months", 11)}
-        className="w-10 px-1.5 py-1.5 border border-gray-200 rounded-md text-xs text-center focus:outline-none focus:ring-1 focus:ring-blue-300"
-      />
-      <span className="text-[10px] text-gray-300">m</span>
-      <input
-        type="number"
-        min={0}
-        max={31}
-        placeholder="D"
-        title="Days"
-        value={displayAsEmpty ? "" : (val.days ?? "")}
-        onChange={setPart("days", 31)}
-        className="w-10 px-1.5 py-1.5 border border-gray-200 rounded-md text-xs text-center focus:outline-none focus:ring-1 focus:ring-blue-300"
-      />
-      <span className="text-[10px] text-gray-300">d</span>
-    </div>
+    <input
+      type="text"
+      value={text}
+      onFocus={() => setFocused(true)}
+      onChange={(e) => {
+        setText(e.target.value);
+        commit(e.target.value);
+      }}
+      onBlur={() => setFocused(false)}
+      placeholder="e.g. 32y or 5y2m6d"
+      title="Type e.g. 32y, 5y2m6d, 10m, 3d"
+      className="w-full bg-transparent border-0 outline-none text-sm font-semibold text-gray-900"
+    />
   );
 }
 
-// ─── Range Logic ──────────────────────────────────────────────────────────────
+// ─── Default Preview Data ───────────────────────────────────────────────────
+const todayStr = () => new Date().toISOString().slice(0, 10);
+
+const defaultPatient = () => ({
+  patientName: "Sofiqul Islam Akondo",
+  age: { years: 32, months: 0, days: 0 },
+  gender: "male",
+  sampleCollectionDate: todayStr(),
+  reportDate: todayStr(),
+});
+
+// ─── Range Logic ─────────────────────────────────────────────────────────────
+// standardRange.data is always tier-based now: an array of { label, comparator,
+// min, max } (Simple), age/gender/combined brackets each holding such an array.
 export function getStandardRangeInfo(field, patientAge, patientGender) {
   const sr = field.standardRange;
   if (!sr || sr.type === "none") return null;
-  const mode = sr.mode || "range";
-
-  if (mode === "range") {
-    if (sr.type === "simple" && sr.data) {
-      return { mode, min: parseFloat(sr.data.min), max: parseFloat(sr.data.max) };
-    }
-    if (sr.type === "age" && hasAge(patientAge) && Array.isArray(sr.data)) {
-      const ageVal = ageToValue(patientAge);
-      const row = sr.data.find((r) => ageVal >= ageToValue(r.minAge) && ageVal <= ageToValue(r.maxAge));
-      if (row) return { mode, min: parseFloat(row.minValue), max: parseFloat(row.maxValue) };
-    }
-    if (sr.type === "gender" && patientGender && sr.data) {
-      const g = sr.data[patientGender];
-      if (g) return { mode, min: parseFloat(g.min), max: parseFloat(g.max) };
-    }
-    if (sr.type === "combined" && hasAge(patientAge) && patientGender && Array.isArray(sr.data)) {
-      const ageVal = ageToValue(patientAge);
-      const row = sr.data.find(
-        (r) => r.gender === patientGender && ageVal >= ageToValue(r.minAge) && ageVal <= ageToValue(r.maxAge),
-      );
-      if (row) return { mode, min: parseFloat(row.minValue), max: parseFloat(row.maxValue) };
-    }
-    return null;
-  }
 
   let tiers = [];
   if (sr.type === "simple" && Array.isArray(sr.data)) {
@@ -152,14 +152,9 @@ export function getStandardRangeInfo(field, patientAge, patientGender) {
     );
     tiers = bracket?.tiers || [];
   }
-  if (!tiers || tiers.length === 0) return null;
-  return { mode, tiers };
-}
 
-export function getStandardRange(field, patientAge, patientGender) {
-  const info = getStandardRangeInfo(field, patientAge, patientGender);
-  if (!info || info.mode !== "range") return null;
-  return { min: info.min, max: info.max };
+  if (!tiers || tiers.length === 0) return null;
+  return { tiers };
 }
 
 function tierMatches(t, v) {
@@ -211,30 +206,29 @@ export function evaluateStatus(value, rangeInfo) {
   const v = parseFloat(value);
   if (isNaN(v)) return null;
 
-  if (rangeInfo.mode === "range") {
-    let status = "normal";
-    if (v < rangeInfo.min) status = "low";
-    else if (v > rangeInfo.max) status = "high";
-    return { kind: "range", status };
-  }
-
   const tier = rangeInfo.tiers.find((t) => tierMatches(t, v));
   if (!tier) return null;
+
   const label = (tier.label || "").toLowerCase();
   let status = "tag";
   if (/low/.test(label)) status = "low";
   else if (/high/.test(label)) status = "high";
   else if (/normal|unremarkable|negative/.test(label)) status = "normal";
-  return { kind: "tagged", status, label: tier.label };
+  return { status, label: tier.label };
 }
 
+// Convenience for callers that already have a plain { min, max } (not a field's
+// standardRange) and just want low/normal/high classification.
 export function getRangeStatus(value, range) {
-  if (!range) return "neutral";
-  const res = evaluateStatus(value, { mode: "range", ...range });
-  return res ? res.status : "neutral";
+  if (!range || value === "" || value === null || value === undefined) return "neutral";
+  const v = parseFloat(value);
+  if (isNaN(v)) return "neutral";
+  if (v < range.min) return "low";
+  if (v > range.max) return "high";
+  return "normal";
 }
 
-// ─── Reference Value Logic (text/textarea fields) ─────────────────────────────
+// ─── Reference Value Logic (text/textarea fields) ───────────────────────────
 export function getReferenceValue(field, patientAge, patientGender) {
   const rv = field.referenceValue;
   if (!rv || rv.type === "none") return null;
@@ -273,13 +267,12 @@ export function hydrateValuesFromReport(schema, existingReport) {
   return values;
 }
 
-// ─── Tooltip ──────────────────────────────────────────────────────────────────
+// ─── Tooltip ─────────────────────────────────────────────────────────────────
 
 function RangeTooltip({ field }) {
   const [open, setOpen] = useState(false);
   const sr = field.standardRange;
   if (!sr || sr.type === "none") return null;
-  const mode = sr.mode || "range";
 
   return (
     <div className="relative inline-flex" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
@@ -291,59 +284,17 @@ function RangeTooltip({ field }) {
       </button>
       {open && (
         <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 bg-gray-800 text-gray-200 text-[11px] rounded-lg py-2.5 px-3 shadow-xl border border-white/10 pointer-events-none">
-          <div className="text-[9px] font-bold uppercase tracking-wider text-blue-400 mb-1.5">
-            {mode === "tagged" ? "Reference Tiers" : "Reference Ranges"}
-          </div>
+          <div className="text-[9px] font-bold uppercase tracking-wider text-blue-400 mb-1.5">Reference Ranges</div>
 
-          {mode === "range" && sr.type === "simple" && sr.data && (
-            <div className="text-gray-400 leading-7 font-mono text-[10.5px]">
-              {sr.data.min} – {sr.data.max} {field.unit || ""}
-            </div>
-          )}
-          {mode === "range" &&
-            sr.type === "age" &&
-            Array.isArray(sr.data) &&
-            sr.data.map((r, i) => (
-              <div key={i} className="text-gray-400 leading-7 font-mono text-[10.5px]">
-                Age {formatAge(r.minAge)}–{formatAge(r.maxAge)}:{" "}
-                <span className="text-gray-200 font-medium">
-                  {r.minValue}–{r.maxValue}
-                </span>
-              </div>
-            ))}
-          {mode === "range" &&
-            sr.type === "gender" &&
-            sr.data &&
-            Object.entries(sr.data).map(([g, v]) => (
-              <div key={g} className="text-gray-400 leading-7 font-mono text-[10.5px] capitalize">
-                {g}:{" "}
-                <span className="text-gray-200 font-medium">
-                  {v.min}–{v.max}
-                </span>
-              </div>
-            ))}
-          {mode === "range" &&
-            sr.type === "combined" &&
-            Array.isArray(sr.data) &&
-            sr.data.map((r, i) => (
-              <div key={i} className="text-gray-400 leading-7 font-mono text-[10.5px] capitalize">
-                {r.gender} {formatAge(r.minAge)}–{formatAge(r.maxAge)}:{" "}
-                <span className="text-gray-200 font-medium">
-                  {r.minValue}–{r.maxValue}
-                </span>
-              </div>
-            ))}
-
-          {mode === "tagged" &&
-            sr.type === "simple" &&
+          {sr.type === "simple" &&
             Array.isArray(sr.data) &&
             sr.data.map((t, i) => (
               <div key={i} className="text-gray-400 leading-7 font-mono text-[10.5px]">
                 {t.label}: <span className="text-gray-200 font-medium">{formatTierRange(t)}</span>
               </div>
             ))}
-          {mode === "tagged" &&
-            sr.type === "age" &&
+
+          {sr.type === "age" &&
             Array.isArray(sr.data) &&
             sr.data.map((b, i) => (
               <div key={i}>
@@ -357,8 +308,8 @@ function RangeTooltip({ field }) {
                 ))}
               </div>
             ))}
-          {mode === "tagged" &&
-            sr.type === "gender" &&
+
+          {sr.type === "gender" &&
             sr.data &&
             Object.entries(sr.data).map(([g, tiers]) => (
               <div key={g}>
@@ -370,8 +321,8 @@ function RangeTooltip({ field }) {
                 ))}
               </div>
             ))}
-          {mode === "tagged" &&
-            sr.type === "combined" &&
+
+          {sr.type === "combined" &&
             Array.isArray(sr.data) &&
             sr.data.map((b, i) => (
               <div key={i}>
@@ -393,7 +344,7 @@ function RangeTooltip({ field }) {
   );
 }
 
-// ─── Patient Form ─────────────────────────────────────────────────────────────
+// ─── Patient Form ────────────────────────────────────────────────────────────
 
 function PatientForm({ patient, onChange }) {
   return (
@@ -417,7 +368,7 @@ function PatientForm({ patient, onChange }) {
         </div>
         <div className="p-3.5 px-4.5 border-r-0 sm:border-r border-gray-200">
           <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 block">Age</label>
-          <AgeInputGroup value={patient.age} onChange={(v) => onChange("age", v)} />
+          <PatientAgeInput value={patient.age} onChange={(v) => onChange("age", v)} />
         </div>
         <div className="p-3.5 px-4.5">
           <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 block">
@@ -468,7 +419,7 @@ function PatientForm({ patient, onChange }) {
   );
 }
 
-// ─── Shared Row Layout ─────────────────────────────────────────────────────
+// ─── Shared Row Layout ───────────────────────────────────────────────────────
 
 function FieldRow({ field, control, refNode, error }) {
   return (
@@ -494,39 +445,17 @@ function FieldRow({ field, control, refNode, error }) {
 
 function RangeBadge({ evaluated }) {
   if (!evaluated) return null;
-  if (evaluated.kind === "range") {
-    if (evaluated.status === "normal") {
-      return (
-        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold border bg-emerald-50 text-emerald-600 border-emerald-600/25">
-          <CheckCircle2 className="w-2.5 h-2.5" />
-          Normal
-        </span>
-      );
-    }
-    return (
-      <span
-        className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold border ${
-          evaluated.status === "low"
-            ? "bg-orange-50 text-orange-600 border-orange-600/25"
-            : "bg-red-50 text-red-600 border-red-600/25"
-        }`}
-      >
-        {evaluated.status === "low" ? <TrendingDown className="w-2.5 h-2.5" /> : <TrendingUp className="w-2.5 h-2.5" />}
-        {evaluated.status === "low" ? "Low" : "High"}
-      </span>
-    );
-  }
+  const cls =
+    evaluated.status === "low"
+      ? "bg-orange-50 text-orange-600 border-orange-600/25"
+      : evaluated.status === "high"
+        ? "bg-red-50 text-red-600 border-red-600/25"
+        : evaluated.status === "normal"
+          ? "bg-emerald-50 text-emerald-600 border-emerald-600/25"
+          : "bg-violet-50 text-violet-600 border-violet-600/25 normal-case";
   return (
     <span
-      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold border ${
-        evaluated.status === "low"
-          ? "bg-orange-50 text-orange-600 border-orange-600/25"
-          : evaluated.status === "high"
-            ? "bg-red-50 text-red-600 border-red-600/25"
-            : evaluated.status === "normal"
-              ? "bg-emerald-50 text-emerald-600 border-emerald-600/25"
-              : "bg-violet-50 text-violet-600 border-violet-600/25 normal-case"
-      }`}
+      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold border ${cls}`}
     >
       {evaluated.status === "low" && <TrendingDown className="w-2.5 h-2.5" />}
       {evaluated.status === "high" && <TrendingUp className="w-2.5 h-2.5" />}
@@ -538,23 +467,17 @@ function RangeBadge({ evaluated }) {
 }
 
 function RangeRefContent({ field, rangeInfo, evaluated, hasValue }) {
-  const rangeText =
-    rangeInfo?.mode === "range" ? `${rangeInfo.min}–${rangeInfo.max}${field.unit ? ` ${field.unit}` : ""}` : null;
   if (!rangeInfo) return null;
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
-      {rangeText ? (
-        <span className="font-mono text-[11px] text-gray-500">{rangeText}</span>
-      ) : (
-        <span className="font-mono text-[11px] text-gray-500">Tiered ref.</span>
-      )}
+      <span className="font-mono text-[11px] text-gray-500">Ranges set</span>
       {hasValue && <RangeBadge evaluated={evaluated} />}
       <RangeTooltip field={field} />
     </div>
   );
 }
 
-// ─── Number Field ─────────────────────────────────────────────────────────────
+// ─── Number Field ────────────────────────────────────────────────────────────
 
 const STATUS_RING = {
   ok: "border-emerald-600 ring-2 ring-emerald-600/10",
@@ -606,7 +529,7 @@ function NumberField({ field, value, onChange, error, patientAge, patientGender 
   );
 }
 
-// ─── Radio ────────────────────────────────────────────────────────────────────
+// ─── Radio ───────────────────────────────────────────────────────────────────
 
 function ToggleOption({ selected, children, onClick }) {
   return (
@@ -647,7 +570,7 @@ function RadioField({ field, options = [], value, onChange, error }) {
   return <FieldRow field={field} error={error} control={control} />;
 }
 
-// ─── Dropdown ─────────────────────────────────────────────────────────────────
+// ─── Dropdown ────────────────────────────────────────────────────────────────
 
 function DropdownField({ field, options = [], value, onChange, error }) {
   const [open, setOpen] = useState(false);
@@ -705,7 +628,7 @@ function DropdownField({ field, options = [], value, onChange, error }) {
   return <FieldRow field={field} error={error} control={control} />;
 }
 
-// ─── Checkbox ─────────────────────────────────────────────────────────────────
+// ─── Checkbox ────────────────────────────────────────────────────────────────
 
 function CheckboxField({ field, options = [], value = [], onChange, error }) {
   const toggle = (opt) => onChange(value.includes(opt) ? value.filter((v) => v !== opt) : [...value, opt]);
@@ -741,7 +664,7 @@ function CheckboxField({ field, options = [], value = [], onChange, error }) {
   return <FieldRow field={field} error={error} control={control} />;
 }
 
-// ─── Textarea ─────────────────────────────────────────────────────────────────
+// ─── Textarea ────────────────────────────────────────────────────────────────
 
 function TextareaField({ field, value, onChange, error, patientAge, patientGender }) {
   const maxLength = field.maxLength || 200;
@@ -779,7 +702,7 @@ function TextareaField({ field, value, onChange, error, patientAge, patientGende
   return <FieldRow field={field} error={error} control={control} refNode={refNode} />;
 }
 
-// ─── Text Input ───────────────────────────────────────────────────────────────
+// ─── Text Input ──────────────────────────────────────────────────────────────
 
 function TextInputField({ field, value, onChange, error, patientAge, patientGender }) {
   const maxLength = field.maxLength || 200;
@@ -817,7 +740,7 @@ function TextInputField({ field, value, onChange, error, patientAge, patientGend
   return <FieldRow field={field} error={error} control={control} refNode={refNode} />;
 }
 
-// ─── Section Panel ────────────────────────────────────────────────────────────
+// ─── Section Panel ───────────────────────────────────────────────────────────
 
 function SectionPanel({ section, sectionIndex, values, onChange, errors, patientAge, patientGender }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -948,7 +871,7 @@ function SectionPanel({ section, sectionIndex, values, onChange, errors, patient
   );
 }
 
-// ─── Build Payload ────────────────────────────────────────────────────────────
+// ─── Build Payload ───────────────────────────────────────────────────────────
 
 function buildPayload(schema, values, patient) {
   const report = {};
@@ -965,12 +888,8 @@ function buildPayload(schema, values, patient) {
 
         if (field.type === "number") {
           const rangeInfo = getStandardRangeInfo(field, patient.age, patient.gender);
-          if (rangeInfo?.mode === "range") {
-            entry.referenceRange = `${rangeInfo.min}–${rangeInfo.max}`;
-          } else if (rangeInfo?.mode === "tagged") {
-            const evaluated = evaluateStatus(val, rangeInfo);
-            if (evaluated) entry.referenceTag = evaluated.label;
-          }
+          const evaluated = evaluateStatus(val, rangeInfo);
+          if (evaluated) entry.referenceTag = evaluated.label;
         } else if (field.type === "input" || field.type === "textarea") {
           const refValue = getReferenceValue(field, patient.age, patient.gender);
           if (refValue) entry.referenceValue = refValue;
@@ -993,16 +912,10 @@ function buildPayload(schema, values, patient) {
   };
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Main Component ──────────────────────────────────────────────────────────
 
 function SchemaRenderer({ schema, onSubmit, loading = false }) {
-  const [patient, setPatient] = useState({
-    patientName: "",
-    age: emptyAge(),
-    gender: "",
-    sampleCollectionDate: "",
-    reportDate: "",
-  });
+  const [patient, setPatient] = useState(defaultPatient);
   const [values, setValues] = useState({});
   const [errors, setErrors] = useState({});
 
@@ -1046,7 +959,7 @@ function SchemaRenderer({ schema, onSubmit, loading = false }) {
 
   const handleReset = () => {
     setValues({});
-    setPatient({ patientName: "", age: emptyAge(), gender: "", sampleCollectionDate: "", reportDate: "" });
+    setPatient(defaultPatient());
     setErrors({});
   };
 

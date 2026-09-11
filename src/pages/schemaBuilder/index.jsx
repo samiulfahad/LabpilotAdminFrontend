@@ -51,7 +51,7 @@ const INITIAL_SCHEMA = {
 // gets a chance to act on the scroll.
 const preventWheelChange = (e) => e.currentTarget.blur();
 
-const emptyStandardRange = () => ({ type: "none", mode: "range", data: {} });
+const emptyStandardRange = () => ({ type: "none", data: [] });
 const emptyReferenceValue = () => ({ type: "none", data: {} });
 
 const findSection = (s, sectionId) => s.schema.sections.find((sec) => sec.id === sectionId);
@@ -168,10 +168,10 @@ const useSchemaStore = create(
         if (key === "name" && s.fieldErrors[fieldId] !== undefined) s.fieldErrors[fieldId] = undefined;
       }),
 
-    updateFieldStandardRange: (sectionId, fieldId, scope, mode, data) =>
+    updateFieldStandardRange: (sectionId, fieldId, scope, data) =>
       set((s) => {
         const f = findField(findSection(s, sectionId), fieldId);
-        if (f) f.standardRange = { type: scope, mode, data };
+        if (f) f.standardRange = { type: scope, data };
       }),
 
     updateFieldReferenceValue: (sectionId, fieldId, scope, data) =>
@@ -200,11 +200,6 @@ const RANGE_SCOPES = [
   { value: "combined", label: "Complex (Age + Gender)" },
 ];
 
-const RANGE_MODES = [
-  { value: "range", label: "Min / Max", icon: SlidersHorizontal },
-  { value: "tagged", label: "Tagged Tiers", icon: Tags },
-];
-
 const TIER_COMPARATORS = [
   { value: "between", label: "Between" },
   { value: "gt", label: "> Greater than" },
@@ -224,15 +219,10 @@ const fieldTypeIcon = (type) => {
   return ft ? ft.icon : Hash;
 };
 
-const defaultDataForScope = (scope, mode) => {
-  if (mode === "tagged") {
-    if (scope === "age" || scope === "combined") return [];
-    if (scope === "gender") return { male: [], female: [], other: [] };
-    return [];
-  }
+const defaultDataForScope = (scope) => {
   if (scope === "age" || scope === "combined") return [];
-  if (scope === "gender") return {};
-  return {};
+  if (scope === "gender") return { male: [], female: [], other: [] };
+  return []; // "simple" (and "none") — flat list of tiers
 };
 
 const newTier = () => ({ id: Date.now() + Math.random(), label: "", comparator: "between", min: "", max: "" });
@@ -242,95 +232,103 @@ const AGE_NO_LIMIT = { years: 150, months: 11, days: 31 };
 const isAgeNoLimit = (age) =>
   !!age && Number(age.years) === 150 && Number(age.months) === 11 && Number(age.days) === 31;
 
-// Age data shape is always { years, months, days } — unchanged. The UI just
-// hides the month/day inputs behind a "+ month / day" toggle until they're
-// needed, defaulting open only when a saved value already has month/day set.
+// Parses shorthand like "5y2m6d", "2Y", "10m", "1y 2m 5d", or a bare number
+// (treated as years) into { years, months, days }. Order/case/spacing don't
+// matter; each present unit is clamped to its valid range.
+function parseAgeShorthand(raw) {
+  const s = (raw || "").trim();
+  if (!s) return null;
+
+  const yMatch = s.match(/(\d+)\s*y/i);
+  const mMatch = s.match(/(\d+)\s*m/i);
+  const dMatch = s.match(/(\d+)\s*d/i);
+
+  let years = yMatch ? Number(yMatch[1]) : 0;
+  let months = mMatch ? Number(mMatch[1]) : 0;
+  let days = dMatch ? Number(dMatch[1]) : 0;
+
+  if (!yMatch && !mMatch && !dMatch) {
+    const bare = Number(s.replace(/[^\d]/g, ""));
+    if (Number.isNaN(bare)) return null;
+    years = bare;
+  }
+
+  return {
+    years: Math.max(0, Math.min(150, years)),
+    months: Math.max(0, Math.min(11, months)),
+    days: Math.max(0, Math.min(31, days)),
+  };
+}
+
+// Compact shorthand for pre-filling the input when editing an existing value,
+// e.g. { years: 1, months: 2, days: 5 } -> "1y2m5d".
+function toAgeShorthand(val) {
+  if (!val) return "";
+  const y = Number(val.years) || 0;
+  const m = Number(val.months) || 0;
+  const d = Number(val.days) || 0;
+  if (!y && !m && !d) return "";
+  return `${y ? `${y}y` : ""}${m ? `${m}m` : ""}${d ? `${d}d` : ""}`;
+}
+
+// Full-word readout shown below the input, e.g. "1 year 2 months 5 days".
+function formatAgeReadout(val) {
+  const y = Number(val?.years) || 0;
+  const m = Number(val?.months) || 0;
+  const d = Number(val?.days) || 0;
+  const parts = [];
+  if (y) parts.push(`${y} year${y === 1 ? "" : "s"}`);
+  if (m) parts.push(`${m} month${m === 1 ? "" : "s"}`);
+  if (d) parts.push(`${d} day${d === 1 ? "" : "s"}`);
+  return parts.length ? parts.join(" ") : "0 years";
+}
+
+// Data shape is always { years, months, days } — unchanged. The UI is now a
+// single free-typed shorthand field (e.g. "5y2m6d", "2y", "10m") that gets
+// parsed behind the scenes into that same shape, with a readable readout
+// shown underneath so the user can confirm what was captured.
 function AgeInputGroup({ value, onChange, isMax }) {
   const val = value || {};
   const displayAsEmpty = isMax && isAgeNoLimit(val);
-  const hasMonthOrDay = Number(val.months) > 0 || Number(val.days) > 0;
-  const [expanded, setExpanded] = useState(hasMonthOrDay && !displayAsEmpty);
+  const [text, setText] = useState(displayAsEmpty ? "" : toAgeShorthand(val));
 
+  // Re-sync the local text when the underlying value changes from elsewhere
+  // (schema load, reset, etc.) rather than from this input's own typing.
   useEffect(() => {
-    if (hasMonthOrDay && !displayAsEmpty) setExpanded(true);
+    setText(displayAsEmpty ? "" : toAgeShorthand(val));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasMonthOrDay, displayAsEmpty]);
+  }, [val.years, val.months, val.days, displayAsEmpty]);
 
-  const setPart = (key, max) => (e) => {
-    const raw = e.target.value;
-    if (raw === "") {
-      onChange({ ...val, [key]: "" });
+  const commit = () => {
+    if (!text.trim()) {
+      onChange(isMax ? { ...AGE_NO_LIMIT } : emptyAge());
       return;
     }
-    const num = Math.max(0, Math.min(max, Number(raw)));
-    onChange({ ...val, [key]: num });
-  };
-
-  const handleYearsBlur = () => {
-    if (isMax && (val.years === "" || val.years === undefined || val.years === null)) {
-      onChange({ ...AGE_NO_LIMIT });
-    }
+    const parsed = parseAgeShorthand(text);
+    if (parsed) onChange(parsed);
+    else setText(displayAsEmpty ? "" : toAgeShorthand(val)); // revert on garbage input
   };
 
   return (
-    <div className="flex items-center gap-2 flex-wrap w-full">
-      <div className="flex items-center gap-1.5">
-        <input
-          type="number"
-          min={0}
-          max={150}
-          placeholder={isMax ? "∞" : "Y"}
-          title="Years"
-          value={displayAsEmpty ? "" : (val.years ?? "")}
-          onChange={setPart("years", 150)}
-          onBlur={isMax ? handleYearsBlur : undefined}
-          onWheel={preventWheelChange}
-          className="w-20 px-3 py-2.5 border border-gray-200 rounded-lg text-base text-center focus:outline-none focus:ring-1 focus:ring-blue-300"
-        />
-        <span className="text-xs text-gray-400">y</span>
-      </div>
-
-      {expanded ? (
-        <>
-          <div className="flex items-center gap-1.5">
-            <input
-              type="number"
-              min={0}
-              max={11}
-              placeholder="M"
-              title="Months"
-              value={displayAsEmpty ? "" : (val.months ?? "")}
-              onChange={setPart("months", 11)}
-              onWheel={preventWheelChange}
-              className="w-16 px-3 py-2.5 border border-gray-200 rounded-lg text-base text-center focus:outline-none focus:ring-1 focus:ring-blue-300"
-            />
-            <span className="text-xs text-gray-400">m</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <input
-              type="number"
-              min={0}
-              max={31}
-              placeholder="D"
-              title="Days"
-              value={displayAsEmpty ? "" : (val.days ?? "")}
-              onChange={setPart("days", 31)}
-              onWheel={preventWheelChange}
-              className="w-16 px-3 py-2.5 border border-gray-200 rounded-lg text-base text-center focus:outline-none focus:ring-1 focus:ring-blue-300"
-            />
-            <span className="text-xs text-gray-400">d</span>
-          </div>
-        </>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          title="Add month/day"
-          className="flex items-center justify-center w-9 h-9 rounded-lg border border-dashed border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-colors flex-shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
-      )}
+    <div className="flex flex-col gap-1 w-48">
+      <input
+        type="text"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            commit();
+            e.currentTarget.blur();
+          }
+        }}
+        placeholder={isMax ? "∞ (no limit)" : "e.g. 5y2m6d"}
+        title="Type e.g. 5y2m6d, 2y, 10m, 3d"
+        className="w-full px-3.5 py-3 border border-gray-200 rounded-lg text-base font-medium focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
+      />
+      <span className="text-xs text-gray-500 px-2 py-0.5 bg-gray-50 rounded-full w-fit truncate max-w-full">
+        {displayAsEmpty ? "No limit" : formatAgeReadout(val)}
+      </span>
     </div>
   );
 }
@@ -421,197 +419,8 @@ function TestSearchSelect({ tests, value, onChange, error }) {
   );
 }
 
-function SimpleRangeInput({ data, onChange }) {
-  return (
-    <div className="grid grid-cols-2 gap-3 w-full">
-      <div>
-        <label className="text-xs text-gray-500 mb-1 block">Min Value</label>
-        <input
-          type="number"
-          value={data?.min || ""}
-          onChange={(e) => onChange({ ...data, min: e.target.value })}
-          placeholder="0"
-          onWheel={preventWheelChange}
-          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
-        />
-      </div>
-      <div>
-        <label className="text-xs text-gray-500 mb-1 block">Max Value</label>
-        <input
-          type="number"
-          value={data?.max || ""}
-          onChange={(e) => onChange({ ...data, max: e.target.value })}
-          placeholder="100"
-          onWheel={preventWheelChange}
-          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
-        />
-      </div>
-    </div>
-  );
-}
-
-function AgeRangeInput({ data = [], onChange }) {
-  const rows = Array.isArray(data) ? data : [];
-  const addRow = () =>
-    onChange([...rows, { minAge: emptyAge(), maxAge: { ...AGE_NO_LIMIT }, minValue: "", maxValue: "" }]);
-  const removeRow = (i) => onChange(rows.filter((_, idx) => idx !== i));
-  const update = (i, key, val) => onChange(rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
-
-  return (
-    <div className="space-y-2 w-full">
-      {rows.map((row, i) => (
-        <div key={i} className="flex flex-wrap items-end gap-3 p-2 bg-gray-50 rounded-lg border border-gray-200 w-full">
-          <div>
-            <label className="text-xs text-gray-400 block mb-0.5">Min Age</label>
-            <AgeInputGroup value={row.minAge} onChange={(v) => update(i, "minAge", v)} />
-          </div>
-          <div>
-            <label className="text-xs text-gray-400 block mb-0.5">Max Age (∞ = no limit)</label>
-            <AgeInputGroup value={row.maxAge} onChange={(v) => update(i, "maxAge", v)} isMax />
-          </div>
-          <div className="flex-1 min-w-[80px]">
-            <label className="text-xs text-gray-400 block mb-0.5">Min Val</label>
-            <input
-              type="number"
-              value={row.minValue}
-              onChange={(e) => update(i, "minValue", e.target.value)}
-              onWheel={preventWheelChange}
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
-            />
-          </div>
-          <div className="flex-1 min-w-[80px]">
-            <label className="text-xs text-gray-400 block mb-0.5">Max Val</label>
-            <input
-              type="number"
-              value={row.maxValue}
-              onChange={(e) => update(i, "maxValue", e.target.value)}
-              onWheel={preventWheelChange}
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
-            />
-          </div>
-          <button
-            onClick={() => removeRow(i)}
-            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      ))}
-      <button
-        onClick={addRow}
-        className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium px-2 py-1 hover:bg-blue-50 rounded-md transition-colors"
-      >
-        <Plus className="w-3.5 h-3.5" /> Add Age Range
-      </button>
-    </div>
-  );
-}
-
-function GenderRangeInput({ data = {}, onChange }) {
-  const update = (gender, key, val) => onChange({ ...data, [gender]: { ...(data[gender] || {}), [key]: val } });
-  return (
-    <div className="space-y-3 w-full">
-      {GENDER_OPTIONS.map(({ value: gender, label, symbol, classes }) => (
-        <div key={gender} className="p-3 bg-gray-50 rounded-lg border border-gray-200 w-full">
-          <div className="flex items-center gap-1.5 mb-2">
-            <span className="text-sm font-medium text-gray-700">{label}</span>
-            <span className={`text-xs px-2 py-0.5 rounded-full ${classes}`}>{symbol}</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {["min", "max"].map((k) => (
-              <div key={k}>
-                <label className="text-xs text-gray-400 mb-1 block capitalize">{k}</label>
-                <input
-                  type="number"
-                  value={data[gender]?.[k] || ""}
-                  onChange={(e) => update(gender, k, e.target.value)}
-                  onWheel={preventWheelChange}
-                  className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-300"
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function CombinedRangeInput({ data = [], onChange }) {
-  const rows = Array.isArray(data) ? data : [];
-  const addRow = () =>
-    onChange([
-      ...rows,
-      { gender: "male", minAge: emptyAge(), maxAge: { ...AGE_NO_LIMIT }, minValue: "", maxValue: "" },
-    ]);
-  const removeRow = (i) => onChange(rows.filter((_, idx) => idx !== i));
-  const update = (i, key, val) => onChange(rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
-
-  return (
-    <div className="space-y-2 w-full">
-      {rows.map((row, i) => (
-        <div key={i} className="flex flex-wrap items-end gap-3 p-2 bg-gray-50 rounded-lg border border-gray-200 w-full">
-          <div>
-            <label className="text-xs text-gray-400 block mb-0.5">Gender</label>
-            <select
-              value={row.gender}
-              onChange={(e) => update(i, "gender", e.target.value)}
-              className="w-24 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
-            >
-              <option value="male">Male</option>
-              <option value="female">Female</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-gray-400 block mb-0.5">Min Age</label>
-            <AgeInputGroup value={row.minAge} onChange={(v) => update(i, "minAge", v)} />
-          </div>
-          <div>
-            <label className="text-xs text-gray-400 block mb-0.5">Max Age (∞ = no limit)</label>
-            <AgeInputGroup value={row.maxAge} onChange={(v) => update(i, "maxAge", v)} isMax />
-          </div>
-          <div className="flex-1 min-w-[80px]">
-            <label className="text-xs text-gray-400 block mb-0.5">Min Val</label>
-            <input
-              type="number"
-              value={row.minValue}
-              onChange={(e) => update(i, "minValue", e.target.value === "" ? "" : Number(e.target.value))}
-              onWheel={preventWheelChange}
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
-            />
-          </div>
-          <div className="flex-1 min-w-[80px]">
-            <label className="text-xs text-gray-400 block mb-0.5">Max Val</label>
-            <input
-              type="number"
-              value={row.maxValue}
-              onChange={(e) => update(i, "maxValue", e.target.value === "" ? "" : Number(e.target.value))}
-              onWheel={preventWheelChange}
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
-            />
-          </div>
-          <button
-            onClick={() => removeRow(i)}
-            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      ))}
-      <button
-        onClick={addRow}
-        className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium px-2 py-1 hover:bg-blue-50 rounded-md transition-colors"
-      >
-        <Plus className="w-3.5 h-3.5" /> Add Range
-      </button>
-    </div>
-  );
-}
-
-// Tier rows: label used to be flex-1 (large) and the value inputs were fixed
-// at w-20/w-24 (small). Flipped below — label + condition are fixed/narrow,
-// value inputs flex to fill the remaining row width.
+// Each row is a manually-labeled range: user types the label (e.g. "Low",
+// "Normal", "High") and a condition — nothing is auto-generated.
 function TierListEditor({ tiers = [], onChange, dense }) {
   const rows = Array.isArray(tiers) ? tiers : [];
   const addTier = () => onChange([...rows, newTier()]);
@@ -640,13 +449,13 @@ function TierListEditor({ tiers = [], onChange, dense }) {
             key={tier.id || i}
             className={`flex flex-wrap items-end gap-2 ${dense ? "p-1.5" : "p-2"} bg-white rounded-lg border border-gray-200 w-full`}
           >
-            <div className="w-28 flex-shrink-0">
-              {!dense && <label className="text-xs text-gray-400 block mb-0.5">Tag Label</label>}
+            <div className="w-44 flex-shrink-0">
+              {!dense && <label className="text-xs text-gray-400 block mb-0.5">Label</label>}
               <input
                 value={tier.label}
                 onChange={(e) => update(i, "label", e.target.value)}
                 placeholder="Low, Normal…"
-                className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
+                className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm font-medium focus:outline-none focus:ring-1 focus:ring-blue-300"
               />
             </div>
 
@@ -733,13 +542,13 @@ function TierListEditor({ tiers = [], onChange, dense }) {
         onClick={addTier}
         className="flex items-center gap-1.5 text-xs text-teal-600 hover:text-teal-700 font-medium px-2 py-1 hover:bg-teal-50 rounded-md transition-colors"
       >
-        <Plus className="w-3.5 h-3.5" /> Add Tag Tier
+        <Plus className="w-3.5 h-3.5" /> Add Range
       </button>
     </div>
   );
 }
 
-function TaggedSimpleInput({ data = [], onChange }) {
+function RangesSimpleInput({ data = [], onChange }) {
   return (
     <div className="p-2 bg-gray-50 rounded-lg border border-gray-200 w-full">
       <TierListEditor tiers={data} onChange={onChange} />
@@ -747,7 +556,7 @@ function TaggedSimpleInput({ data = [], onChange }) {
   );
 }
 
-function TaggedAgeInput({ data = [], onChange }) {
+function RangesAgeInput({ data = [], onChange }) {
   const brackets = Array.isArray(data) ? data : [];
   const addBracket = () => onChange([...brackets, { minAge: emptyAge(), maxAge: { ...AGE_NO_LIMIT }, tiers: [] }]);
   const removeBracket = (i) => onChange(brackets.filter((_, idx) => idx !== i));
@@ -766,7 +575,7 @@ function TaggedAgeInput({ data = [], onChange }) {
               <label className="text-xs text-gray-400 block mb-0.5">Max Age (∞ = no limit)</label>
               <AgeInputGroup value={b.maxAge} onChange={(v) => update(i, "maxAge", v)} isMax />
             </div>
-            <span className="text-xs text-gray-400 pb-2">tags for this age bracket:</span>
+            <span className="text-xs text-gray-400 pb-2">ranges for this age bracket:</span>
             <button
               onClick={() => removeBracket(i)}
               className="ml-auto p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
@@ -787,7 +596,7 @@ function TaggedAgeInput({ data = [], onChange }) {
   );
 }
 
-function TaggedGenderInput({ data = {}, onChange }) {
+function RangesGenderInput({ data = {}, onChange }) {
   const update = (gender, tiers) => onChange({ ...data, [gender]: tiers });
   return (
     <div className="space-y-3 w-full">
@@ -804,7 +613,7 @@ function TaggedGenderInput({ data = {}, onChange }) {
   );
 }
 
-function TaggedCombinedInput({ data = [], onChange }) {
+function RangesCombinedInput({ data = [], onChange }) {
   const brackets = Array.isArray(data) ? data : [];
   const addBracket = () =>
     onChange([...brackets, { gender: "male", minAge: emptyAge(), maxAge: { ...AGE_NO_LIMIT }, tiers: [] }]);
@@ -1044,19 +853,13 @@ function OptionsInput({ options = [], onChange }) {
 function StandardRangeSection({ field, sectionId }) {
   const { updateFieldStandardRange, updateField } = useSchemaStore();
   const scope = field.standardRange?.type || "none";
-  const mode = field.standardRange?.mode || "range";
   const data = field.standardRange?.data;
 
-  const setMode = (newMode) => {
-    if (newMode === mode) return;
-    updateFieldStandardRange(sectionId, field.id, scope, newMode, defaultDataForScope(scope, newMode));
-  };
-
   const setScope = (newScope) => {
-    updateFieldStandardRange(sectionId, field.id, newScope, mode, defaultDataForScope(newScope, mode));
+    updateFieldStandardRange(sectionId, field.id, newScope, defaultDataForScope(newScope));
   };
 
-  const setData = (newData) => updateFieldStandardRange(sectionId, field.id, scope, mode, newData);
+  const setData = (newData) => updateFieldStandardRange(sectionId, field.id, scope, newData);
 
   return (
     <div className="space-y-4 p-4 bg-violet-50/50 rounded-xl border border-violet-100 w-full">
@@ -1088,36 +891,16 @@ function StandardRangeSection({ field, sectionId }) {
 
       {scope !== "none" && (
         <div>
-          <label className="text-xs font-medium text-gray-600 block mb-1.5">Range Mode</label>
-          <div className="inline-flex items-center gap-1 bg-white rounded-lg p-1 border border-gray-200">
-            {RANGE_MODES.map((m) => {
-              const Icon = m.icon;
-              return (
-                <button
-                  key={m.value}
-                  onClick={() => setMode(m.value)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                    mode === m.value ? "bg-violet-500 text-white" : "text-gray-500 hover:bg-gray-50"
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  {m.label}
-                </button>
-              );
-            })}
-          </div>
+          <label className="text-xs font-medium text-gray-600 block mb-1.5 flex items-center gap-1.5">
+            <SlidersHorizontal className="w-3.5 h-3.5 text-violet-500" />
+            Ranges
+          </label>
+          {scope === "simple" && <RangesSimpleInput data={data} onChange={setData} />}
+          {scope === "age" && <RangesAgeInput data={data} onChange={setData} />}
+          {scope === "gender" && <RangesGenderInput data={data} onChange={setData} />}
+          {scope === "combined" && <RangesCombinedInput data={data} onChange={setData} />}
         </div>
       )}
-
-      {scope === "simple" && mode === "range" && <SimpleRangeInput data={data} onChange={setData} />}
-      {scope === "age" && mode === "range" && <AgeRangeInput data={data} onChange={setData} />}
-      {scope === "gender" && mode === "range" && <GenderRangeInput data={data} onChange={setData} />}
-      {scope === "combined" && mode === "range" && <CombinedRangeInput data={data} onChange={setData} />}
-
-      {scope === "simple" && mode === "tagged" && <TaggedSimpleInput data={data} onChange={setData} />}
-      {scope === "age" && mode === "tagged" && <TaggedAgeInput data={data} onChange={setData} />}
-      {scope === "gender" && mode === "tagged" && <TaggedGenderInput data={data} onChange={setData} />}
-      {scope === "combined" && mode === "tagged" && <TaggedCombinedInput data={data} onChange={setData} />}
     </div>
   );
 }
@@ -1213,9 +996,9 @@ function FieldCard({ field, sectionId, fieldError, onDragStart, onDragOver, onDr
           <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full capitalize">
             {FIELD_TYPES.find((f) => f.value === field.type)?.label}
           </span>
-          {isNumberType && field.standardRange?.mode === "tagged" && field.standardRange?.type !== "none" && (
+          {isNumberType && field.standardRange?.type && field.standardRange.type !== "none" && (
             <span className="text-xs px-2 py-0.5 bg-violet-50 text-violet-500 rounded-full flex items-center gap-1">
-              <Tags className="w-3 h-3" /> Tagged
+              <Tags className="w-3 h-3" /> Ranges set
             </span>
           )}
           {isTextType && field.referenceValue?.type && field.referenceValue.type !== "none" && (
@@ -1553,11 +1336,9 @@ function normalizeSchema(apiSchema) {
         standardRange: f.standardRange
           ? {
               type: f.standardRange.type || "none",
-              mode: f.standardRange.mode || "range",
               data: normalizeAgeData(
                 f.standardRange.type,
-                f.standardRange.data ||
-                  (f.standardRange.type === "age" || f.standardRange.type === "combined" ? [] : {}),
+                f.standardRange.data || defaultDataForScope(f.standardRange.type || "none"),
               ),
             }
           : emptyStandardRange(),

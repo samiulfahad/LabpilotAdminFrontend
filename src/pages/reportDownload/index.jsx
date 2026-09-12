@@ -68,6 +68,21 @@ const formatDate = (val) => {
   return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 };
 
+// patientAge is saved as { years, months, days } (SchemaRenderer's age input).
+// A bare number/string is also accepted for reports saved before that change.
+function formatPatientAge(age) {
+  if (!age) return "";
+  if (typeof age === "number" || typeof age === "string") return age !== "" ? `${age} yrs` : "";
+  const y = Number(age.years) || 0;
+  const m = Number(age.months) || 0;
+  const d = Number(age.days) || 0;
+  if (!y && !m && !d) return "";
+  const parts = [`${y}y`];
+  if (m) parts.push(`${m}m`);
+  if (d) parts.push(`${d}d`);
+  return parts.join(" ");
+}
+
 function ErrorState({ message, onClose }) {
   return (
     <div
@@ -164,7 +179,7 @@ export default function ReportDownload() {
         setReportName(data.schemaName ?? "Lab Report");
         setPatient({
           name: data.patientName ?? "",
-          age: data.patientAge ? `${data.patientAge} yrs` : "",
+          age: formatPatientAge(data.patientAge),
           gender: data.patientGender ?? "",
           contact: "01723939836",
           referredBy: "Dr. XXXX (MBBS, FCPS, BCS Health)",

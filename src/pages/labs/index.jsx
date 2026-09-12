@@ -20,7 +20,7 @@ import {
   Info,
   Lock,
   Zap,
-  Ruler,
+  Image as ImageIcon,
 } from "lucide-react";
 
 import Popup from "../../components/popup";
@@ -79,7 +79,14 @@ const EMPTY_LAB = {
     maxDoctor: "",
     maxAdmissionSpace: "",
   },
-  medicalReport: { padHeight: "" },
+  decoration: {
+    reportPadHeaderHeight: 63.5,
+    reportPadFooterHeight: 20,
+    invoicePadHeaderHeight: 30,
+    invoicePadFooterHeight: 10,
+    logo: "",
+    tagline: "Powered by LabPilot Pro",
+  },
 };
 
 const LAB_TYPE_OPTIONS = [
@@ -178,6 +185,84 @@ const SelectInput = ({ label, hint, children, ...props }) => (
     </select>
   </Field>
 );
+
+// Best-effort client-side scrub before rendering pasted/uploaded SVG with
+// dangerouslySetInnerHTML — this is only for the inline preview. The
+// backend re-sanitizes independently before persisting, since a client
+// check can always be bypassed by hitting the API directly.
+const sanitizeSvgForPreview = (svg) => {
+  if (typeof svg !== "string") return "";
+  return svg
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/\son\w+\s*=\s*"[^"]*"/gi, "")
+    .replace(/\son\w+\s*=\s*'[^']*'/gi, "")
+    .replace(/(href|xlink:href)\s*=\s*"javascript:[^"]*"/gi, '$1="#"');
+};
+
+// SVG markup is plain text/XML, not a binary format — so a "logo upload"
+// doesn't need @fastify/multipart, a file-storage bucket, or a separate
+// upload endpoint. FileReader.readAsText() turns the selected .svg file
+// into a string in the browser, which then travels as an ordinary field
+// inside the same JSON body as everything else on this form (like
+// `tagline`). Users can also just paste raw <svg>…</svg> markup directly.
+const SvgLogoField = ({ value, onChange }) => {
+  const fileRef = useRef(null);
+
+  const handleFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => onChange(String(reader.result ?? ""));
+    reader.readAsText(file); // NOT readAsDataURL/readAsArrayBuffer — we want raw markup, not base64/binary
+    e.target.value = ""; // allow re-selecting the same file later
+  };
+
+  const sizeKb = value ? (new Blob([value]).size / 1024).toFixed(1) : null;
+
+  return (
+    <Field
+      label="Logo (SVG)"
+      hint="Paste SVG markup or upload a .svg file — stored as plain text, no file upload handling needed."
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <input ref={fileRef} type="file" accept=".svg,image/svg+xml" className="hidden" onChange={handleFile} />
+        <GhostBtn onClick={() => fileRef.current?.click()}>Upload .svg</GhostBtn>
+        {value && (
+          <button
+            type="button"
+            onClick={() => onChange("")}
+            className="text-[10.5px] font-semibold bg-transparent border-none cursor-pointer"
+            style={{ color: RUST }}
+          >
+            Clear
+          </button>
+        )}
+        {sizeKb && (
+          <span className="text-[10.5px] ml-auto" style={{ color: INK_MUTE }}>
+            {sizeKb} KB
+          </span>
+        )}
+      </div>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={4}
+        placeholder='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">…</svg>'
+        className={`${inputBase} font-mono text-[11.5px] resize-y`}
+        style={inputStyle}
+        onFocus={(e) => (e.target.style.borderColor = TEAL)}
+        onBlur={(e) => (e.target.style.borderColor = LINE)}
+      />
+      {value && (
+        <div
+          className="mt-2 flex items-center justify-center p-3 [&_svg]:max-h-16 [&_svg]:max-w-full"
+          style={{ background: GROUND, border: `1px solid ${LINE}`, borderRadius: "2px" }}
+          dangerouslySetInnerHTML={{ __html: sanitizeSvgForPreview(value) }}
+        />
+      )}
+    </Field>
+  );
+};
 
 const StampToggle = ({ active, onChange, onLabel = "Active", offLabel = "Inactive" }) => (
   <button
@@ -743,30 +828,44 @@ const LabLimitModal = ({ isOpen, onClose, lab, onSaved, showPopup }) => {
   );
 };
 
-/* ─── Section 5: Medical Report modal ─────────────────────── */
+/* ─── Section 5: Decoration modal ─────────────────────────── */
 
-const LabMedicalReportModal = ({ isOpen, onClose, lab, onSaved, showPopup }) => {
-  const [form, setForm] = useState({ padHeight: "" });
+const LabDecorationModal = ({ isOpen, onClose, lab, onSaved, showPopup }) => {
+  const [form, setForm] = useState(EMPTY_LAB.decoration);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (isOpen && lab) {
-      setForm({ padHeight: lab.medicalReport?.padHeight ?? "" });
+      setForm({
+        reportPadHeaderHeight: lab.decoration?.reportPadHeaderHeight ?? EMPTY_LAB.decoration.reportPadHeaderHeight,
+        reportPadFooterHeight: lab.decoration?.reportPadFooterHeight ?? EMPTY_LAB.decoration.reportPadFooterHeight,
+        invoicePadHeaderHeight: lab.decoration?.invoicePadHeaderHeight ?? EMPTY_LAB.decoration.invoicePadHeaderHeight,
+        invoicePadFooterHeight: lab.decoration?.invoicePadFooterHeight ?? EMPTY_LAB.decoration.invoicePadFooterHeight,
+        logo: lab.decoration?.logo ?? EMPTY_LAB.decoration.logo,
+        tagline: lab.decoration?.tagline ?? EMPTY_LAB.decoration.tagline,
+      });
     }
   }, [isOpen, lab]);
+
+  const setD = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const handleSave = async () => {
     if (loading) return;
     setLoading(true);
     try {
-      await labService.updateLabMedicalReport(lab._id, {
-        padHeight: Number(form.padHeight) || 0,
+      await labService.updateLabDecoration(lab._id, {
+        reportPadHeaderHeight: Number(form.reportPadHeaderHeight) || 0,
+        invoicePadHeaderHeight: Number(form.invoicePadHeaderHeight) || 0,
+        reportPadFooterHeight: Number(form.reportPadFooterHeight) || 0,
+        invoicePadFooterHeight: Number(form.invoicePadFooterHeight) || 0,
+        logo: form.logo,
+        tagline: form.tagline,
       });
-      showPopup("success", "Medical report settings updated.");
+      showPopup("success", "Decoration settings updated.");
       await onSaved();
       onClose();
     } catch (err) {
-      showPopup("error", err?.response?.data?.message || "Failed to update medical report settings.");
+      showPopup("error", err?.response?.data?.message || "Failed to update decoration settings.");
     } finally {
       setLoading(false);
     }
@@ -778,20 +877,52 @@ const LabMedicalReportModal = ({ isOpen, onClose, lab, onSaved, showPopup }) => 
     <SectionModal
       isOpen={isOpen}
       onClose={onClose}
-      title="Edit Medical Report"
-      icon={Ruler}
+      title="Edit Decoration"
+      icon={ImageIcon}
       tone={VIOLET}
       onSave={handleSave}
       loading={loading}
     >
-      <MonoInput
-        label="Pad Height (mm)"
-        type="number"
-        value={form.padHeight}
-        onChange={(e) => setForm((f) => ({ ...f, padHeight: e.target.value }))}
-        placeholder="0"
-        hint="Top offset used when printing this lab's medical report letterhead."
+      <SvgLogoField value={form.logo} onChange={(v) => setForm((f) => ({ ...f, logo: v }))} />
+      <TextInput
+        label="Tagline"
+        value={form.tagline}
+        onChange={setD("tagline")}
+        placeholder="Powered by LabPilot Pro"
       />
+      <div className="grid grid-cols-2 gap-3">
+        <MonoInput
+          label="Report Header (mm)"
+          type="number"
+          value={form.reportPadHeaderHeight}
+          onChange={setD("reportPadHeaderHeight")}
+          placeholder="63.5"
+        />
+        <MonoInput
+          label="Report Footer (mm)"
+          type="number"
+          value={form.reportPadFooterHeight}
+          onChange={setD("reportPadFooterHeight")}
+          placeholder="20"
+        />
+        <MonoInput
+          label="Invoice Header (mm)"
+          type="number"
+          value={form.invoicePadHeaderHeight}
+          onChange={setD("invoicePadHeaderHeight")}
+          placeholder="30"
+        />
+        <MonoInput
+          label="Invoice Footer (mm)"
+          type="number"
+          value={form.invoicePadFooterHeight}
+          onChange={setD("invoicePadFooterHeight")}
+          placeholder="10"
+        />
+      </div>
+      <p className="text-[10.5px]" style={{ color: INK_MUTE }}>
+        Header/footer offsets used when printing this lab's report and invoice letterheads.
+      </p>
     </SectionModal>
   );
 };
@@ -913,8 +1044,36 @@ const LabViewSheet = ({ isOpen, onClose, lab, onToggleActive }) => {
             ))}
           </div>
 
-          <SectionHead icon={Ruler} title="Medical Report" />
-          <Leader label="Pad Height" value={lab.medicalReport?.padHeight ? `${lab.medicalReport.padHeight}mm` : null} />
+          <SectionHead icon={ImageIcon} title="Decoration" />
+          {lab.decoration?.logo && (
+            <div className="flex items-center gap-2 py-1">
+              <span className="text-[10.5px] uppercase tracking-wide shrink-0" style={{ color: INK_MUTE }}>
+                Logo
+              </span>
+              <div
+                className="flex items-center justify-center px-3 py-1.5 [&_svg]:max-h-8 [&_svg]:max-w-[120px]"
+                style={{ background: GROUND, border: `1px solid ${LINE}`, borderRadius: "2px" }}
+                dangerouslySetInnerHTML={{ __html: sanitizeSvgForPreview(lab.decoration.logo) }}
+              />
+            </div>
+          )}
+          <Leader label="Tagline" value={lab.decoration?.tagline} />
+          <Leader
+            label="Report header/footer"
+            value={
+              lab.decoration?.reportPadHeaderHeight || lab.decoration?.reportPadFooterHeight
+                ? `${lab.decoration?.reportPadHeaderHeight ?? 0}mm / ${lab.decoration?.reportPadFooterHeight ?? 0}mm`
+                : null
+            }
+          />
+          <Leader
+            label="Invoice header/footer"
+            value={
+              lab.decoration?.invoicePadHeaderHeight || lab.decoration?.invoicePadFooterHeight
+                ? `${lab.decoration?.invoicePadHeaderHeight ?? 0}mm / ${lab.decoration?.invoicePadFooterHeight ?? 0}mm`
+                : null
+            }
+          />
         </div>
       </div>
 
@@ -944,7 +1103,7 @@ const LAB_TABS = [
   { id: "contact", label: "Contact", icon: Phone },
   { id: "billing", label: "Billing", icon: CreditCard },
   { id: "limit", label: "Limits", icon: Layers },
-  { id: "medicalReport", label: "Report", icon: Ruler },
+  { id: "decoration", label: "Decoration", icon: ImageIcon },
 ];
 
 const LabCreateModal = ({ isOpen, onClose, onSubmit }) => {
@@ -961,7 +1120,7 @@ const LabCreateModal = ({ isOpen, onClose, onSubmit }) => {
   const setC = (k) => (e) => setForm((f) => ({ ...f, contact: { ...f.contact, [k]: e.target.value } }));
   const setB = (k) => (e) => setForm((f) => ({ ...f, billing: { ...f.billing, [k]: e.target.value } }));
   const setLm = (k) => (e) => setForm((f) => ({ ...f, limit: { ...f.limit, [k]: e.target.value } }));
-  const setMR = (k) => (e) => setForm((f) => ({ ...f, medicalReport: { ...f.medicalReport, [k]: e.target.value } }));
+  const setDec = (k) => (e) => setForm((f) => ({ ...f, decoration: { ...f.decoration, [k]: e.target.value } }));
 
   const tabIdx = LAB_TABS.findIndex((t) => t.id === tab);
   const isLast = tabIdx === LAB_TABS.length - 1;
@@ -1290,20 +1449,55 @@ const LabCreateModal = ({ isOpen, onClose, onSubmit }) => {
           </div>
         </div>
 
-        {/* MEDICAL REPORT */}
-        <div className={`${tab === "medicalReport" ? "flex" : "hidden"} flex-col gap-4 p-5`}>
+        {/* DECORATION */}
+        <div className={`${tab === "decoration" ? "flex" : "hidden"} flex-col gap-4 p-5`}>
           <div
             className="p-4 space-y-4"
             style={{ background: PAPER, border: `1px solid ${LINE}`, borderRadius: "2px" }}
           >
-            <MonoInput
-              label="Pad Height (mm)"
-              type="number"
-              value={form.medicalReport.padHeight}
-              onChange={setMR("padHeight")}
-              placeholder="0"
-              hint="Top offset used when printing this lab's medical report letterhead."
+            <SvgLogoField
+              value={form.decoration.logo}
+              onChange={(v) => setForm((f) => ({ ...f, decoration: { ...f.decoration, logo: v } }))}
             />
+            <TextInput
+              label="Tagline"
+              value={form.decoration.tagline}
+              onChange={setDec("tagline")}
+              placeholder="Powered by LabPilot Pro"
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <MonoInput
+                label="Report Header (mm)"
+                type="number"
+                value={form.decoration.reportPadHeaderHeight}
+                onChange={setDec("reportPadHeaderHeight")}
+                placeholder="63.5"
+              />
+              <MonoInput
+                label="Report Footer (mm)"
+                type="number"
+                value={form.decoration.reportPadFooterHeight}
+                onChange={setDec("reportPadFooterHeight")}
+                placeholder="20"
+              />
+              <MonoInput
+                label="Invoice Header (mm)"
+                type="number"
+                value={form.decoration.invoicePadHeaderHeight}
+                onChange={setDec("invoicePadHeaderHeight")}
+                placeholder="30"
+              />
+              <MonoInput
+                label="Invoice Footer (mm)"
+                type="number"
+                value={form.decoration.invoicePadFooterHeight}
+                onChange={setDec("invoicePadFooterHeight")}
+                placeholder="10"
+              />
+            </div>
+            <p className="text-[10.5px]" style={{ color: INK_MUTE }}>
+              Header/footer offsets used when printing this lab's report and invoice letterheads.
+            </p>
           </div>
         </div>
       </div>
@@ -1382,7 +1576,7 @@ const EditMenu = ({ onSelect }) => {
     { key: "contact", label: "Contact", icon: Phone, color: VIOLET },
     { key: "billing", label: "Billing", icon: CreditCard, color: AMBER },
     { key: "limit", label: "Limits", icon: Layers, color: BLUE },
-    { key: "medicalReport", label: "Report", icon: Ruler, color: VIOLET },
+    { key: "decoration", label: "Decoration", icon: ImageIcon, color: VIOLET },
   ];
 
   return (
@@ -1617,7 +1811,7 @@ const Labs = () => {
   const [total, setTotal] = useState(0);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [viewLab, setViewLab] = useState(null);
-  const [editTarget, setEditTarget] = useState(null); // { lab, section: "details"|"contact"|"billing"|"limit"|"medicalReport" }
+  const [editTarget, setEditTarget] = useState(null); // { lab, section: "details"|"contact"|"billing"|"limit"|"decoration" }
   const [popup, setPopup] = useState({ open: false, type: "success", message: "", onConfirm: null });
   const debounceRef = useRef(null);
 
@@ -1701,8 +1895,13 @@ const Labs = () => {
           maxDoctor: Number(form.limit.maxDoctor) || 0,
           maxAdmissionSpace: Number(form.limit.maxAdmissionSpace) || 0,
         },
-        medicalReport: {
-          padHeight: Number(form.medicalReport.padHeight) || 0,
+        decoration: {
+          reportPadHeaderHeight: Number(form.decoration.reportPadHeaderHeight) || 0,
+          reportPadFooterHeight: Number(form.decoration.reportPadFooterHeight) || 0,
+          invoicePadHeaderHeight: Number(form.decoration.invoicePadHeaderHeight) || 0,
+          invoicePadFooterHeight: Number(form.decoration.invoicePadFooterHeight) || 0,
+          logo: form.decoration.logo,
+          tagline: form.decoration.tagline,
         },
       });
       showPopup("success", "Lab registered successfully!");
@@ -1941,8 +2140,8 @@ const Labs = () => {
         onSaved={() => refreshLab(editTarget.lab._id)}
         showPopup={showPopup}
       />
-      <LabMedicalReportModal
-        isOpen={editTarget?.section === "medicalReport"}
+      <LabDecorationModal
+        isOpen={editTarget?.section === "decoration"}
         onClose={() => setEditTarget(null)}
         lab={editTarget?.lab}
         onSaved={() => refreshLab(editTarget.lab._id)}

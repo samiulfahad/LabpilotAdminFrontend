@@ -214,7 +214,7 @@ export function evaluateStatus(value, rangeInfo) {
   if (/low/.test(label)) status = "low";
   else if (/high/.test(label)) status = "high";
   else if (/normal|unremarkable|negative/.test(label)) status = "normal";
-  return { status, label: tier.label };
+  return { status, label: tier.label, range: formatTierRange(tier) };
 }
 
 // Convenience for callers that already have a plain { min, max } (not a field's
@@ -232,21 +232,10 @@ export function getRangeStatus(value, range) {
 export function getReferenceValue(field, patientAge, patientGender) {
   const rv = field.referenceValue;
   if (!rv || rv.type === "none") return null;
-  if (rv.type === "simple") return rv.data?.value || null;
-  if (rv.type === "age" && hasAge(patientAge) && Array.isArray(rv.data)) {
-    const ageVal = ageToValue(patientAge);
-    const row = rv.data.find((r) => ageVal >= ageToValue(r.minAge) && ageVal <= ageToValue(r.maxAge));
-    return row?.value || null;
-  }
-  if (rv.type === "gender" && patientGender && rv.data) {
-    return rv.data[patientGender]?.value || null;
-  }
-  if (rv.type === "combined" && hasAge(patientAge) && patientGender && Array.isArray(rv.data)) {
-    const ageVal = ageToValue(patientAge);
-    const row = rv.data.find(
-      (r) => r.gender === patientGender && ageVal >= ageToValue(r.minAge) && ageVal <= ageToValue(r.maxAge),
-    );
-    return row?.value || null;
+  if (rv.type === "text" || rv.type === "textarea") return rv.data?.value || null;
+  if (rv.type === "keyvalue" && Array.isArray(rv.data)) {
+    const pairs = rv.data.filter((p) => p.key || p.value).map((p) => `${p.key}: ${p.value}`);
+    return pairs.length ? pairs.join(", ") : null;
   }
   return null;
 }
@@ -889,7 +878,10 @@ function buildPayload(schema, values, patient) {
         if (field.type === "number") {
           const rangeInfo = getStandardRangeInfo(field, patient.age, patient.gender);
           const evaluated = evaluateStatus(val, rangeInfo);
-          if (evaluated) entry.referenceTag = evaluated.label;
+          if (evaluated) {
+            entry.referenceRange = evaluated.range;
+            entry.referenceTag = evaluated.label;
+          }
         } else if (field.type === "input" || field.type === "textarea") {
           const refValue = getReferenceValue(field, patient.age, patient.gender);
           if (refValue) entry.referenceValue = refValue;

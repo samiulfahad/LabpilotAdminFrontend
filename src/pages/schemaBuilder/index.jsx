@@ -200,6 +200,15 @@ const RANGE_SCOPES = [
   { value: "combined", label: "Complex (Age + Gender)" },
 ];
 
+// Reference Value on text/textarea fields uses its own scope set — no
+// age/gender segmentation, just how the reference note itself is authored.
+const REFERENCE_VALUE_SCOPES = [
+  { value: "none", label: "None" },
+  { value: "keyvalue", label: "Key-Value Pair" },
+  { value: "text", label: "Text" },
+  { value: "textarea", label: "Textarea" },
+];
+
 const TIER_COMPARATORS = [
   { value: "between", label: "Between" },
   { value: "gt", label: "> Greater than" },
@@ -665,7 +674,7 @@ function RangesCombinedInput({ data = [], onChange }) {
   );
 }
 
-function RefSimpleInput({ data = {}, onChange }) {
+function RefTextInput({ data = {}, onChange }) {
   return (
     <div className="w-full">
       <label className="text-xs text-gray-500 mb-1 block">Reference / Standard Value</label>
@@ -679,116 +688,51 @@ function RefSimpleInput({ data = {}, onChange }) {
   );
 }
 
-function RefAgeInput({ data = [], onChange }) {
+function RefTextareaInput({ data = {}, onChange }) {
+  return (
+    <div className="w-full">
+      <label className="text-xs text-gray-500 mb-1 block">Reference / Standard Text</label>
+      <textarea
+        value={data.value || ""}
+        onChange={(e) => onChange({ ...data, value: e.target.value })}
+        rows={3}
+        placeholder="Enter longer multi-line reference details..."
+        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-100 focus:border-amber-400 resize-none"
+      />
+    </div>
+  );
+}
+
+const newKeyValue = () => ({ id: Date.now() + Math.random(), key: "", value: "" });
+
+function RefKeyValueInput({ data = [], onChange }) {
   const rows = Array.isArray(data) ? data : [];
-  const addRow = () => onChange([...rows, { minAge: emptyAge(), maxAge: { ...AGE_NO_LIMIT }, value: "" }]);
+  const addRow = () => onChange([...rows, newKeyValue()]);
   const removeRow = (i) => onChange(rows.filter((_, idx) => idx !== i));
   const update = (i, key, val) => onChange(rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
 
   return (
     <div className="space-y-2 w-full">
       {rows.map((row, i) => (
-        <div key={i} className="flex flex-wrap items-end gap-3 p-2 bg-white rounded-lg border border-gray-200 w-full">
-          <div>
-            <label className="text-xs text-gray-400 block mb-0.5">Min Age</label>
-            <AgeInputGroup value={row.minAge} onChange={(v) => update(i, "minAge", v)} />
-          </div>
-          <div>
-            <label className="text-xs text-gray-400 block mb-0.5">Max Age (∞ = no limit)</label>
-            <AgeInputGroup value={row.maxAge} onChange={(v) => update(i, "maxAge", v)} isMax />
-          </div>
-          <div className="flex-1 min-w-[140px]">
-            <label className="text-xs text-gray-400 block mb-0.5">Reference Value</label>
-            <input
-              value={row.value}
-              onChange={(e) => update(i, "value", e.target.value)}
-              placeholder="e.g. White"
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
-            />
-          </div>
-          <button
-            onClick={() => removeRow(i)}
-            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      ))}
-      <button
-        onClick={addRow}
-        className="flex items-center gap-1.5 text-xs text-amber-600 hover:text-amber-700 font-medium px-2 py-1 hover:bg-amber-50 rounded-md transition-colors"
-      >
-        <Plus className="w-3.5 h-3.5" /> Add Age Range
-      </button>
-    </div>
-  );
-}
-
-function RefGenderInput({ data = {}, onChange }) {
-  const update = (gender, value) => onChange({ ...data, [gender]: { value } });
-  return (
-    <div className="grid grid-cols-3 gap-3 w-full">
-      {GENDER_OPTIONS.map(({ value: gender, label, symbol }) => (
-        <div key={gender}>
-          <label className="text-xs text-gray-400 mb-1 flex items-center gap-1">
-            <span>{label}</span>
-            <span className="text-gray-400">{symbol}</span>
-          </label>
+        <div
+          key={row.id || i}
+          className="flex items-center gap-2 p-2 bg-white rounded-lg border border-gray-200 w-full"
+        >
           <input
-            value={data[gender]?.value || ""}
-            onChange={(e) => update(gender, e.target.value)}
-            placeholder="Reference value"
-            className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-300"
+            value={row.key}
+            onChange={(e) => update(i, "key", e.target.value)}
+            placeholder="Key (e.g. Color)"
+            className="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
           />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function RefCombinedInput({ data = [], onChange }) {
-  const rows = Array.isArray(data) ? data : [];
-  const addRow = () =>
-    onChange([...rows, { gender: "male", minAge: emptyAge(), maxAge: { ...AGE_NO_LIMIT }, value: "" }]);
-  const removeRow = (i) => onChange(rows.filter((_, idx) => idx !== i));
-  const update = (i, key, val) => onChange(rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
-
-  return (
-    <div className="space-y-2 w-full">
-      {rows.map((row, i) => (
-        <div key={i} className="flex flex-wrap items-end gap-3 p-2 bg-white rounded-lg border border-gray-200 w-full">
-          <div>
-            <label className="text-xs text-gray-400 block mb-0.5">Gender</label>
-            <select
-              value={row.gender}
-              onChange={(e) => update(i, "gender", e.target.value)}
-              className="w-24 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
-            >
-              <option value="male">Male</option>
-              <option value="female">Female</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-gray-400 block mb-0.5">Min Age</label>
-            <AgeInputGroup value={row.minAge} onChange={(v) => update(i, "minAge", v)} />
-          </div>
-          <div>
-            <label className="text-xs text-gray-400 block mb-0.5">Max Age (∞ = no limit)</label>
-            <AgeInputGroup value={row.maxAge} onChange={(v) => update(i, "maxAge", v)} isMax />
-          </div>
-          <div className="flex-1 min-w-[140px]">
-            <label className="text-xs text-gray-400 block mb-0.5">Reference Value</label>
-            <input
-              value={row.value}
-              onChange={(e) => update(i, "value", e.target.value)}
-              placeholder="e.g. White"
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
-            />
-          </div>
+          <input
+            value={row.value}
+            onChange={(e) => update(i, "value", e.target.value)}
+            placeholder="Value (e.g. Straw Yellow)"
+            className="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
+          />
           <button
             onClick={() => removeRow(i)}
-            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors flex-shrink-0"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -798,7 +742,7 @@ function RefCombinedInput({ data = [], onChange }) {
         onClick={addRow}
         className="flex items-center gap-1.5 text-xs text-amber-600 hover:text-amber-700 font-medium px-2 py-1 hover:bg-amber-50 rounded-md transition-colors"
       >
-        <Plus className="w-3.5 h-3.5" /> Add Reference Row
+        <Plus className="w-3.5 h-3.5" /> Add Pair
       </button>
     </div>
   );
@@ -911,7 +855,7 @@ function ReferenceValueSection({ field, sectionId }) {
   const data = field.referenceValue?.data;
 
   const setScope = (newScope) => {
-    const shape = newScope === "age" || newScope === "combined" ? [] : {};
+    const shape = newScope === "keyvalue" ? [] : {};
     updateFieldReferenceValue(sectionId, field.id, newScope, shape);
   };
   const setData = (newData) => updateFieldReferenceValue(sectionId, field.id, scope, newData);
@@ -919,13 +863,13 @@ function ReferenceValueSection({ field, sectionId }) {
   return (
     <div className="space-y-3 p-4 bg-amber-50/50 rounded-xl border border-amber-100 w-full">
       <div>
-        <label className="text-xs font-medium text-gray-600 block mb-1.5">Reference Value Scope</label>
+        <label className="text-xs font-medium text-gray-600 block mb-1.5">Reference Value Type</label>
         <select
           value={scope}
           onChange={(e) => setScope(e.target.value)}
           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-100 focus:border-amber-400 bg-white"
         >
-          {RANGE_SCOPES.map((rt) => (
+          {REFERENCE_VALUE_SCOPES.map((rt) => (
             <option key={rt.value} value={rt.value}>
               {rt.label}
             </option>
@@ -934,10 +878,9 @@ function ReferenceValueSection({ field, sectionId }) {
         <p className="text-xs text-gray-400 mt-1">Shown side-by-side with the entered value in the report/preview.</p>
       </div>
 
-      {scope === "simple" && <RefSimpleInput data={data} onChange={setData} />}
-      {scope === "age" && <RefAgeInput data={data} onChange={setData} />}
-      {scope === "gender" && <RefGenderInput data={data} onChange={setData} />}
-      {scope === "combined" && <RefCombinedInput data={data} onChange={setData} />}
+      {scope === "text" && <RefTextInput data={data} onChange={setData} />}
+      {scope === "textarea" && <RefTextareaInput data={data} onChange={setData} />}
+      {scope === "keyvalue" && <RefKeyValueInput data={data} onChange={setData} />}
     </div>
   );
 }
@@ -1345,11 +1288,7 @@ function normalizeSchema(apiSchema) {
         referenceValue: f.referenceValue
           ? {
               type: f.referenceValue.type || "none",
-              data: normalizeAgeData(
-                f.referenceValue.type,
-                f.referenceValue.data ||
-                  (f.referenceValue.type === "age" || f.referenceValue.type === "combined" ? [] : {}),
-              ),
+              data: f.referenceValue.data ?? (f.referenceValue.type === "keyvalue" ? [] : {}),
             }
           : emptyReferenceValue(),
       })),

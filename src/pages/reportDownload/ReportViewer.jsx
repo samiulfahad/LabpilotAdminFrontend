@@ -1,4 +1,3 @@
-// ReportViewer.jsx
 import { useState } from "react";
 import { pdf } from "@react-pdf/renderer";
 import {
@@ -81,6 +80,10 @@ function getSectionEntries(sectionData) {
   return Object.entries(sectionData).filter(([key]) => key !== "__showTitle");
 }
 
+// referenceRange (the matched tier's own bounds, e.g. "70–100", "> 10") is
+// checked before referenceTag (its label, e.g. "High") so this only ever
+// falls back to showing the tag text here if a field genuinely has no
+// stored range — normally both are present together now.
 function getRefDisplay(field) {
   return field.referenceRange || field.referenceTag || field.referenceValue || "";
 }
@@ -121,7 +124,7 @@ function ParamRow({ name, field, hasUnits }) {
         {value || <span className="text-slate-300 font-normal">—</span>}
       </td>
       {hasUnits && (
-        <td className="px-3 py-2.5 text-[10px] font-semibold text-slate-500 uppercase border-b border-slate-100">
+        <td className="px-3 py-2.5 text-[10px] font-semibold text-slate-500 border-b border-slate-100">
           {unit || <span className="text-slate-300">—</span>}
         </td>
       )}
@@ -303,7 +306,7 @@ function buildPrintHTML({ reportName, shortId, patient, labInfo, sections, print
         return `<tr class="${isAb ? "bg-rose-50" : "bg-white"}">
         <td class="py-[7px] px-3 text-xs text-gray-700 border-b border-slate-100">${name}</td>
         <td class="py-[7px] px-3 text-xs font-bold ${isAb ? "text-red-700" : "text-gray-900"} border-b border-slate-100">${value || "—"}</td>
-        ${hasUnits ? `<td class="py-[7px] px-3 text-[10px] font-semibold text-slate-500 uppercase border-b border-slate-100">${unit || "—"}</td>` : ""}
+        ${hasUnits ? `<td class="py-[7px] px-3 text-[10px] font-semibold text-slate-500 border-b border-slate-100">${unit || "—"}</td>` : ""}
         <td class="py-[7px] px-3 text-[11px] text-gray-500 border-b border-slate-100">${ref || "—"}</td>
         <td class="py-[7px] px-3 border-b border-slate-100">${
           status

@@ -81,7 +81,7 @@ const s = StyleSheet.create({
   tableRow: { flexDirection: "row", borderBottom: `1 solid #f1f5f9`, paddingVertical: 5 },
   td: { fontSize: 9, paddingHorizontal: 8, color: C.body },
   tdBold: { fontSize: 9, paddingHorizontal: 8, fontFamily: "Helvetica-Bold" },
-  tdUnit: { fontSize: 7.5, paddingHorizontal: 8, color: "#64748b", textTransform: "uppercase" },
+  tdUnit: { fontSize: 7.5, paddingHorizontal: 8, color: "#64748b" },
   tdMuted: { fontSize: 8, paddingHorizontal: 8, color: "#6b7280" },
   pill: { borderRadius: 99, paddingHorizontal: 5, paddingVertical: 1.5, fontSize: 7, fontFamily: "Helvetica-Bold" },
   footer: { position: "absolute", bottom: 0, left: 0, right: 0, padding: "10 16", borderTop: `1 solid ${C.border}` },
@@ -177,7 +177,10 @@ function PDFSection({ sectionName, sectionData, index, showHeader }) {
           {resultEntries.map(([name, field]) => {
             const value = String(field.value ?? "");
             const unit = field.unit || "";
-            const ref = field.referenceRange || field.referenceTag || "";
+            // referenceRange holds the matched tier's own bounds (e.g.
+            // "70–100", "> 10"); referenceTag holds its label (e.g.
+            // "High") — shown separately in Ref. Range vs Status.
+            const ref = field.referenceRange || "";
             const status = getStatus(field);
             const isAb = status === "low" || status === "high";
             return (

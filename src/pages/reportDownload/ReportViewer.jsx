@@ -9,18 +9,13 @@ import {
   Calendar,
   Stethoscope,
   Hash,
-  ClipboardList,
-  TrendingDown,
-  TrendingUp,
   Share2,
   Printer,
   Download,
   ChevronDown,
   Check,
-  CheckCircle2,
   FileText,
   Loader2,
-  Tag,
 } from "lucide-react";
 import { ReportPDFDocument } from "./ReportPDF";
 
@@ -45,31 +40,14 @@ const EMPTY_PATIENT = {
 
 const REPORT_META_KEYS = new Set(["_id", "name", "reportDate", "sampleCollectionDate"]);
 
-function parseRange(ref) {
-  if (!ref) return null;
-  const m = ref.match(/^([\d.]+)\s*[–\-]\s*([\d.]+)$/);
-  if (!m) return null;
-  return { min: parseFloat(m[1]), max: parseFloat(m[2]) };
-}
-
-function statusFromTag(tag) {
-  const label = (tag || "").toLowerCase();
-  if (/low/.test(label)) return "low";
-  if (/high/.test(label)) return "high";
-  if (/normal|unremarkable|negative/.test(label)) return "normal";
-  return "tag";
-}
-
+// Status is now purely presentational: if a field carries a referenceTag
+// (the matched tier's manually-typed label), that label is printed as-is
+// with no low/high/normal guessing, no arrows, and no abnormal-row
+// shading. Fields with no referenceTag simply show no status.
 function getStatus(field) {
   if (!field) return null;
-  if (field.referenceTag) return statusFromTag(field.referenceTag);
-  const n = parseFloat(field.value);
-  if (isNaN(n) || !field.referenceRange) return null;
-  const r = parseRange(field.referenceRange);
-  if (!r) return null;
-  if (n < r.min) return "low";
-  if (n > r.max) return "high";
-  return "normal";
+  if (field.referenceTag) return "tag";
+  return null;
 }
 
 function hasEvaluableStatus(field) {
@@ -83,57 +61,168 @@ function getSectionEntries(sectionData) {
 // referenceRange (the matched tier's own bounds, e.g. "70–100", "> 10") is
 // checked before referenceTag (its label, e.g. "High") so this only ever
 // falls back to showing the tag text here if a field genuinely has no
-// stored range — normally both are present together now.
+// stored range — normally both are present together now. A Key-Value Pair
+// reference comes through as an array of { key, value } objects rather
+// than a string — callers must check for that and render a stacked list
+// instead (merged into the surrounding cell, not a separate boxed table).
+// NOTE: when a number field carries the full referenceTiers array (see
+// RefTierBox below), callers should check for that FIRST and skip this
+// helper entirely — referenceTiers supersedes referenceRange/referenceTag
+// as the richer, dynamically-generated view of the same match.
 function getRefDisplay(field) {
   return field.referenceRange || field.referenceTag || field.referenceValue || "";
+}
+
+// On-screen rendering of a Key-Value Pair reference. This used to be its
+// own fully-bordered <table>, which drew a box inside the already-bordered
+// Ref. Range cell (box-in-a-box). The parent <td> now hands this component
+// the full cell with zero padding (see ParamRow), so each row's own
+// padding + border-top divider stretches edge-to-edge across the cell —
+// reading as real stacked boxed rows (like Male/Female/Children in the
+// docx template), not a thin line floating inside leftover cell padding.
+function RefKeyValueBox({ pairs }) {
+  return (
+    <div className="w-full">
+      {pairs.map((p, i) => (
+        <div
+          key={i}
+          className={`px-3 py-2 text-[11px] font-bold text-black text-center leading-snug ${
+            i > 0 ? "border-t border-black" : ""
+          }`}
+        >
+          {p.key} : {p.value}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// On-screen rendering of a number field's full Low/Normal/High tier set —
+// the same stacked-sub-row pattern as RefKeyValueBox (rows share the cell
+// and carry their own padding/divider, rather than a boxed table nested
+// inside a boxed cell), but dynamically generated from the field's
+// standardRange tiers rather than a fixed key/value list. The tier the
+// patient's actual value landed in gets a neutral gray fill, bold text,
+// and a small "Patient" marker so it's unambiguous which reference band
+// this specific patient falls under — the rest of the tiers are shown for
+// context (the same information the entry-form tooltip surfaces, now
+// printed directly into the report instead of hidden behind a hover).
+function RefTierBox({ tiers }) {
+  return (
+    <div className="w-full">
+      {tiers.map((t, i) => (
+        <div
+          key={i}
+          className={`px-3 py-1.5 text-[11px] leading-snug flex items-center justify-between gap-2 ${
+            i > 0 ? "border-t border-black" : ""
+          } ${t.matched ? "bg-gray-200" : ""}`}
+        >
+          <span className={t.matched ? "font-bold text-black" : "text-black"}>
+            {t.label}: {t.range}
+          </span>
+          {t.matched && (
+            <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide text-black flex-shrink-0">
+              <Check className="w-2.5 h-2.5" /> Patient
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Print-HTML string equivalent of RefKeyValueBox — same idea: each row
+// carries its own padding and a border-top divider, and the parent <td>
+// (see renderSection below) drops its padding for this case so the rows
+// bleed edge-to-edge across the cell, reading as real boxed rows rather
+// than a thin line floating inside the cell's normal padding.
+function refKeyValueRowsHtml(pairs) {
+  return pairs
+    .map(
+      (p, i) =>
+        `<div style="font-size:10px;font-weight:700;color:#000;text-align:center;padding:6px 12px;${
+          i > 0 ? "border-top:1px solid #000;" : ""
+        }">${p.key} : ${p.value}</div>`,
+    )
+    .join("");
+}
+
+// Print-HTML string equivalent of RefTierBox — mirrors refKeyValueRowsHtml's
+// approach (each row owns its padding + border-top divider, cell padding
+// dropped to zero by the caller) but adds the matched-tier gray fill, bold
+// weight, and a small "Patient" marker so the printed page shows exactly
+// which reference band this patient's result falls under.
+function refTierRowsHtml(tiers) {
+  return tiers
+    .map(
+      (t, i) =>
+        `<div style="font-size:10px;color:#000;padding:5px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;${
+          i > 0 ? "border-top:1px solid #000;" : ""
+        }${t.matched ? "background:#e6e6e6;font-weight:700;" : ""}">
+          <span>${t.label}: ${t.range}</span>
+          ${t.matched ? `<span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">✓ Patient</span>` : ""}
+        </div>`,
+    )
+    .join("");
 }
 
 function formatValue(field) {
   return Array.isArray(field.value) ? field.value.join(", ") : String(field.value ?? "");
 }
 
-function StatusPill({ status, label }) {
-  if (!status) return <span className="text-xs text-slate-300">—</span>;
-  const cfg = {
-    normal: { label: "Normal", cls: "bg-emerald-50 text-emerald-700 border-emerald-200", Icon: CheckCircle2 },
-    low: { label: "Low", cls: "bg-amber-50 text-amber-700 border-amber-200", Icon: TrendingDown },
-    high: { label: "High", cls: "bg-red-50 text-red-700 border-red-200", Icon: TrendingUp },
-    tag: { label: label || "—", cls: "bg-violet-50 text-violet-700 border-violet-200", Icon: Tag },
-  }[status];
-  if (!cfg) return <span className="text-xs text-slate-300">—</span>;
+// A bordered black-on-white box with bold uppercase text. Status is now
+// always the "tag" case (or nothing) — this just prints whatever label
+// was typed for the matched tier.
+function StatusBox({ status, label }) {
+  if (!status) return <span className="text-xs text-gray-300">—</span>;
+  const TEXT = label || "—";
   return (
-    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border ${cfg.cls}`}>
-      <cfg.Icon className="w-2.5 h-2.5" />
-      {cfg.label}
+    <span className="inline-block text-[10px] font-bold uppercase tracking-wide text-black border border-black px-2 py-0.5">
+      {TEXT}
     </span>
   );
 }
 
-function ParamRow({ name, field, hasUnits }) {
+function ParamRow({ name, field, hasUnits, hasStatus, isAlt }) {
   const value = formatValue(field);
   const unit = field.unit || "";
-  const ref = getRefDisplay(field);
+  // referenceTiers (when present) is the richer, dynamically-generated
+  // view of the same match — it supersedes the single-line
+  // referenceRange/referenceTag string, so check for it first and skip
+  // getRefDisplay entirely when it's there. Older reports saved before
+  // this field existed simply fall through to the single-line format.
+  const tiers = Array.isArray(field.referenceTiers) && field.referenceTiers.length ? field.referenceTiers : null;
+  const ref = tiers ? null : getRefDisplay(field);
   const status = hasEvaluableStatus(field) ? getStatus(field) : null;
-  const isAb = status === "low" || status === "high";
   return (
-    <tr className={isAb ? "bg-red-50/50" : "odd:bg-white even:bg-slate-50/30"}>
-      <td className="pl-4 pr-3 py-2.5 text-sm text-slate-700 border-b border-slate-100">{name}</td>
-      <td
-        className={`px-3 py-2.5 text-sm font-bold tabular-nums border-b border-slate-100 ${isAb ? "text-red-700" : "text-slate-900"}`}
-      >
-        {value || <span className="text-slate-300 font-normal">—</span>}
+    <tr className={isAlt ? "bg-gray-50" : "bg-white"}>
+      <td className="pl-4 pr-3 py-2.5 text-sm text-black border-b border-r border-black">{name}</td>
+      <td className="px-3 py-2.5 text-sm font-bold text-black border-b border-r border-black tabular-nums">
+        {value || <span className="text-gray-300 font-normal">—</span>}
       </td>
       {hasUnits && (
-        <td className="px-3 py-2.5 text-[10px] font-semibold text-slate-500 border-b border-slate-100">
-          {unit || <span className="text-slate-300">—</span>}
+        <td className="px-3 py-2.5 text-[11px] font-semibold text-black border-b border-r border-black">
+          {unit || <span className="text-gray-300">—</span>}
         </td>
       )}
-      <td className="px-3 py-2.5 text-xs text-slate-500 border-b border-slate-100 tabular-nums">
-        {ref || <span className="text-slate-300">—</span>}
+      <td
+        className={`text-xs text-black border-b border-black tabular-nums align-top ${hasStatus ? "border-r" : ""} ${
+          tiers || Array.isArray(ref) ? "p-0" : "px-3 py-2.5"
+        }`}
+      >
+        {tiers ? (
+          <RefTierBox tiers={tiers} />
+        ) : Array.isArray(ref) ? (
+          <RefKeyValueBox pairs={ref} />
+        ) : (
+          ref || <span className="text-gray-300">—</span>
+        )}
       </td>
-      <td className="px-3 pr-4 py-2.5 border-b border-slate-100">
-        <StatusPill status={status} label={field.referenceTag} />
-      </td>
+      {hasStatus && (
+        <td className="px-3 pr-4 py-2.5 border-b border-black">
+          <StatusBox status={status} label={field.referenceTag} />
+        </td>
+      )}
     </tr>
   );
 }
@@ -142,95 +231,63 @@ function Section({ sectionName, sectionData, index, showHeader }) {
   const [collapsed, setCollapsed] = useState(false);
   const entries = getSectionEntries(sectionData);
   const hasUnits = entries.some(([, v]) => Boolean(v.unit));
+  const hasStatus = entries.some(([, v]) => hasEvaluableStatus(v));
 
   const tableBody = (
     <table className="w-full border-collapse">
       <thead>
-        <tr className="bg-slate-50 border-b border-slate-200">
-          <th className="pl-4 pr-3 py-1.5 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider w-[34%]">
+        <tr className="bg-gray-100 border-b border-black">
+          <th className="pl-4 pr-3 py-1.5 text-left text-[10px] font-bold text-black uppercase tracking-wider border-r border-black w-[34%]">
             Parameter
           </th>
-          <th className="px-3 py-1.5 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider w-[16%]">
+          <th className="px-3 py-1.5 text-left text-[10px] font-bold text-black uppercase tracking-wider border-r border-black w-[16%]">
             Result
           </th>
           {hasUnits && (
-            <th className="px-3 py-1.5 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider w-[12%]">
+            <th className="px-3 py-1.5 text-left text-[10px] font-bold text-black uppercase tracking-wider border-r border-black w-[12%]">
               Unit
             </th>
           )}
-          <th className="px-3 py-1.5 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider w-[24%]">
+          <th
+            className={`px-3 py-1.5 text-left text-[10px] font-bold text-black uppercase tracking-wider w-[24%] ${
+              hasStatus ? "border-r border-black" : ""
+            }`}
+          >
             Ref. Range
           </th>
-          <th className="px-3 pr-4 py-1.5 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider w-[18%]">
-            Status
-          </th>
+          {hasStatus && (
+            <th className="px-3 pr-4 py-1.5 text-left text-[10px] font-bold text-black uppercase tracking-wider w-[18%]">
+              Status
+            </th>
+          )}
         </tr>
       </thead>
       <tbody>
-        {entries.map(([n, f]) => (
-          <ParamRow key={n} name={n} field={f} hasUnits={hasUnits} />
+        {entries.map(([n, f], i) => (
+          <ParamRow key={n} name={n} field={f} hasUnits={hasUnits} hasStatus={hasStatus} isAlt={i % 2 === 1} />
         ))}
       </tbody>
     </table>
   );
 
-  if (!showHeader) return <div className="rounded-lg overflow-hidden border border-slate-200 mb-2.5">{tableBody}</div>;
+  if (!showHeader) return <div className="border border-black mb-2.5">{tableBody}</div>;
 
   return (
-    <div className="rounded-lg overflow-hidden border border-slate-200 mb-2.5">
+    <div className="border border-black mb-2.5">
       <button
         type="button"
         onClick={() => setCollapsed(!collapsed)}
-        className="w-full flex items-center gap-2.5 px-4 py-2.5 bg-slate-700 hover:bg-slate-600 transition-colors text-left"
+        className="w-full flex items-center gap-2.5 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 border-b border-black transition-colors text-left"
       >
-        <span className="w-5 h-5 rounded bg-white/20 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+        <span className="w-5 h-5 border border-black bg-white flex items-center justify-center text-black text-[10px] font-bold flex-shrink-0">
           {String.fromCharCode(65 + index)}
         </span>
-        <span className="flex-1 text-sm font-semibold text-white">{sectionName}</span>
-        <span className="text-[10px] text-slate-400">
-          {entries.length} parameter{entries.length !== 1 ? "s" : ""}
-        </span>
+        <span className="flex-1 text-sm font-bold text-black uppercase tracking-wide">{sectionName}</span>
         <ChevronDown
-          className={`w-3.5 h-3.5 text-slate-400 transition-transform flex-shrink-0 ${collapsed ? "" : "rotate-180"}`}
+          className={`w-3.5 h-3.5 text-black transition-transform flex-shrink-0 ${collapsed ? "" : "rotate-180"}`}
         />
       </button>
       {!collapsed && <div>{tableBody}</div>}
-    </div>
-  );
-}
-
-function SummaryStrip({ sections }) {
-  let normal = 0,
-    low = 0,
-    high = 0;
-  sections.forEach(([, sec]) => {
-    getSectionEntries(sec).forEach(([, field]) => {
-      if (!hasEvaluableStatus(field)) return;
-      const s = getStatus(field);
-      if (s === "normal") normal++;
-      else if (s === "low") low++;
-      else if (s === "high") high++;
-    });
-  });
-  const total = normal + low + high;
-  if (total === 0) return null;
-  return (
-    <div className="flex items-center gap-1 text-xs">
-      <ClipboardList className="w-3 h-3 text-slate-400 mr-1 flex-shrink-0" />
-      <span className="text-slate-500 font-medium">{total} parameters:</span>
-      <span className="font-bold text-emerald-600 ml-1">{normal} Normal</span>
-      {low > 0 && (
-        <>
-          <span className="text-slate-300 mx-0.5">·</span>
-          <span className="font-bold text-amber-600">{low} Low</span>
-        </>
-      )}
-      {high > 0 && (
-        <>
-          <span className="text-slate-300 mx-0.5">·</span>
-          <span className="font-bold text-red-600">{high} High</span>
-        </>
-      )}
     </div>
   );
 }
@@ -243,98 +300,101 @@ function PatientGrid({ patient }) {
     { label: "Sample Date", value: patient.sampleDate, Icon: Calendar },
     { label: "Report Date", value: patient.reportDate, Icon: Calendar },
   ];
-  const Cell = ({ label, value, Icon }) => (
-    <div className="bg-white px-3 py-2">
+  const Cell = ({ label, value, Icon, last }) => (
+    <div className={`bg-white px-3 py-2 border-b border-black ${last ? "" : "border-r"}`}>
       <div className="flex items-center gap-1 mb-0.5">
-        <Icon className="w-2.5 h-2.5 text-slate-400 flex-shrink-0" />
-        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{label}</p>
+        <Icon className="w-2.5 h-2.5 text-black flex-shrink-0" />
+        <p className="text-[9px] font-bold text-black uppercase tracking-widest">{label}</p>
       </div>
-      <p className="text-xs font-semibold text-slate-800 truncate">{value || "—"}</p>
+      <p className="text-xs font-semibold text-black truncate">{value || "—"}</p>
     </div>
   );
   return (
-    <div className="border-b border-slate-200">
-      <div className="grid grid-cols-5 gap-px bg-slate-200 border-b border-slate-200">
-        {mainFields.map((f) => (
-          <Cell key={f.label} {...f} />
+    <div className="border border-black border-b-0">
+      <div className="grid grid-cols-5">
+        {mainFields.map((f, i) => (
+          <Cell key={f.label} {...f} last={i === mainFields.length - 1} />
         ))}
       </div>
-      <div className="bg-white px-3 py-1.5 flex items-center gap-3">
-        <Stethoscope className="w-2.5 h-2.5 text-slate-400 flex-shrink-0" />
-        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Referred By</span>
-        <span className="text-xs font-semibold text-slate-800">{patient.referredBy || "—"}</span>
+      <div className="bg-white px-3 py-1.5 flex items-center gap-3 border-b border-black">
+        <Stethoscope className="w-2.5 h-2.5 text-black flex-shrink-0" />
+        <span className="text-[9px] font-bold text-black uppercase tracking-widest">Referred By</span>
+        <span className="text-xs font-semibold text-black">{patient.referredBy || "—"}</span>
       </div>
     </div>
   );
 }
 
-// ── Tailwind class maps for the generated print document ───────────────────
-// (mirrors the app's own Tailwind palette — the print doc loads Tailwind
-// via the Play CDN so these classes render identically to the app.)
-const STATUS_CLASSES = {
-  normal: { text: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-600/25", label: "Normal" },
-  low: { text: "text-amber-600", bg: "bg-amber-50", border: "border-amber-600/25", label: "↓ Low" },
-  high: { text: "text-red-600", bg: "bg-red-50", border: "border-red-600/25", label: "↑ High" },
-  tag: { text: "text-violet-600", bg: "bg-violet-50", border: "border-violet-600/25", label: null },
-};
-
 // ── Print HTML builder — Tailwind (via Play CDN) for all visual styling.
-// The only two rules that cannot be expressed as a class (@page, and
-// -webkit-print-color-adjust, neither of which attaches to an element) are
-// kept in a two-line <style> block; everything else below is Tailwind.
+// Deliberately monochrome: black text, black rules, white paper. Status is
+// shown as a bordered box with bold text, whatever label was typed for the
+// matched tier — no color, no automatic low/high guessing, no shading.
+// The only two rules with no Tailwind/class-based equivalent (@page,
+// -webkit-print-color-adjust) stay in a two-line <style> block; everything
+// else below is Tailwind.
 function buildPrintHTML({ reportName, shortId, patient, labInfo, sections, printType }) {
   const isPad = printType === "PAD";
+
+  const statusHtml = (status, tagLabel) => {
+    if (!status) return `<span class="text-[11px] text-gray-300">—</span>`;
+    const TEXT = tagLabel || "—";
+    return `<span class="inline-block text-[9px] font-bold uppercase tracking-wide text-black border border-black py-0.5 px-[7px]">${TEXT}</span>`;
+  };
 
   const renderSection = (sectionName, sectionData, index) => {
     const showHeader = sectionData.__showTitle !== false;
     const entries = getSectionEntries(sectionData);
     const hasUnits = entries.some(([, v]) => Boolean(v.unit));
+    const hasStatus = entries.some(([, v]) => hasEvaluableStatus(v));
 
     const unitHeader = hasUnits
-      ? `<th class="py-[5px] px-3 text-left text-[9px] font-bold text-gray-500 uppercase tracking-[0.05em] w-[12%]">Unit</th>`
+      ? `<th class="py-[5px] px-3 text-left text-[9px] font-bold text-black uppercase tracking-[0.05em] border-r border-black w-[12%]">Unit</th>`
+      : "";
+    const statusHeader = hasStatus
+      ? `<th class="py-[5px] px-3 text-left text-[9px] font-bold text-black uppercase tracking-[0.05em] w-[18%]">Status</th>`
       : "";
 
     const rows = entries
-      .map(([name, field]) => {
+      .map(([name, field], i) => {
         const value = formatValue(field);
         const unit = field.unit || "";
-        const ref = getRefDisplay(field);
+        const tiers = Array.isArray(field.referenceTiers) && field.referenceTiers.length ? field.referenceTiers : null;
+        const ref = tiers ? null : getRefDisplay(field);
+        const refHtml = tiers ? refTierRowsHtml(tiers) : Array.isArray(ref) ? refKeyValueRowsHtml(ref) : ref || "—";
         const status = hasEvaluableStatus(field) ? getStatus(field) : null;
-        const isAb = status === "low" || status === "high";
-        const cfg = status ? STATUS_CLASSES[status] : null;
-        const pillLabel = status === "tag" ? field.referenceTag || "—" : cfg?.label;
-        return `<tr class="${isAb ? "bg-rose-50" : "bg-white"}">
-        <td class="py-[7px] px-3 text-xs text-gray-700 border-b border-slate-100">${name}</td>
-        <td class="py-[7px] px-3 text-xs font-bold ${isAb ? "text-red-700" : "text-gray-900"} border-b border-slate-100">${value || "—"}</td>
-        ${hasUnits ? `<td class="py-[7px] px-3 text-[10px] font-semibold text-slate-500 border-b border-slate-100">${unit || "—"}</td>` : ""}
-        <td class="py-[7px] px-3 text-[11px] text-gray-500 border-b border-slate-100">${ref || "—"}</td>
-        <td class="py-[7px] px-3 border-b border-slate-100">${
-          status
-            ? `<span class="text-[9px] font-bold py-0.5 px-[7px] rounded-full border ${cfg.bg} ${cfg.text} ${cfg.border}">${pillLabel}</span>`
-            : `<span class="text-[11px] text-slate-300">—</span>`
-        }</td>
+        const rowBg = i % 2 === 1 ? "bg-gray-50" : "bg-white";
+        const refIsBoxed = Boolean(tiers) || Array.isArray(ref);
+        const refBorder = hasStatus ? "border-r border-black" : "";
+        const refCellClass = refIsBoxed
+          ? `text-[11px] text-black border-b ${refBorder} align-top p-0`
+          : `py-[7px] px-3 text-[11px] text-black border-b ${refBorder} align-top`;
+        return `<tr class="${rowBg}">
+        <td class="py-[7px] px-3 text-xs text-black border-b border-r border-black">${name}</td>
+        <td class="py-[7px] px-3 text-xs font-bold text-black border-b border-r border-black">${value || "—"}</td>
+        ${hasUnits ? `<td class="py-[7px] px-3 text-[10px] font-semibold text-black border-b border-r border-black">${unit || "—"}</td>` : ""}
+        <td class="${refCellClass}">${refHtml}</td>
+        ${hasStatus ? `<td class="py-[7px] px-3 border-b border-black">${statusHtml(status, field.referenceTag)}</td>` : ""}
       </tr>`;
       })
       .join("");
 
     const headerHTML = showHeader
-      ? `<div class="bg-slate-700 py-2 px-3.5 flex items-center gap-2">
-          <span class="w-5 h-5 bg-white/15 rounded flex items-center justify-center text-white text-[9px] font-bold">${String.fromCharCode(65 + index)}</span>
-          <span class="text-white text-xs font-semibold flex-1">${sectionName}</span>
-          <span class="text-slate-400 text-[9px]">${entries.length} parameter${entries.length !== 1 ? "s" : ""}</span>
+      ? `<div class="bg-gray-100 border-b border-black py-2 px-3.5 flex items-center gap-2">
+          <span class="w-5 h-5 bg-white border border-black rounded-none flex items-center justify-center text-black text-[9px] font-bold">${String.fromCharCode(65 + index)}</span>
+          <span class="text-black text-xs font-bold uppercase tracking-wide flex-1">${sectionName}</span>
         </div>`
       : "";
 
-    return `<div class="border border-slate-200 rounded-lg overflow-hidden mb-2.5">
+    return `<div class="border border-black mb-2.5">
       ${headerHTML}
       <table class="w-full border-collapse">
         <thead>
-          <tr class="bg-slate-50 border-b border-slate-200">
-            <th class="py-[5px] px-3 text-left text-[9px] font-bold text-gray-500 uppercase tracking-[0.05em] w-[34%]">Parameter</th>
-            <th class="py-[5px] px-3 text-left text-[9px] font-bold text-gray-500 uppercase tracking-[0.05em] w-[16%]">Result</th>
+          <tr class="bg-gray-100 border-b border-black">
+            <th class="py-[5px] px-3 text-left text-[9px] font-bold text-black uppercase tracking-[0.05em] border-r border-black w-[34%]">Parameter</th>
+            <th class="py-[5px] px-3 text-left text-[9px] font-bold text-black uppercase tracking-[0.05em] border-r border-black w-[16%]">Result</th>
             ${unitHeader}
-            <th class="py-[5px] px-3 text-left text-[9px] font-bold text-gray-500 uppercase tracking-[0.05em] w-[24%]">Ref. Range</th>
-            <th class="py-[5px] px-3 text-left text-[9px] font-bold text-gray-500 uppercase tracking-[0.05em] w-[18%]">Status</th>
+            <th class="py-[5px] px-3 text-left text-[9px] font-bold text-black uppercase tracking-[0.05em] ${hasStatus ? "border-r border-black" : ""} w-[24%]">Ref. Range</th>
+            ${statusHeader}
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -351,60 +411,46 @@ function buildPrintHTML({ reportName, shortId, patient, labInfo, sections, print
   ];
   const mainCells = mainFields
     .map(
-      ({ label, value }) =>
-        `<td class="py-1.5 px-3 bg-white align-top border-r border-slate-200 w-1/5">
-          <div class="text-[8px] font-bold text-gray-400 uppercase tracking-[0.06em]">${label}</div>
-          <div class="text-[11px] font-semibold text-slate-800 mt-0.5">${value || "—"}</div>
+      ({ label, value }, i) =>
+        `<td class="py-1.5 px-3 bg-white align-top ${i < mainFields.length - 1 ? "border-r" : ""} border-black w-1/5">
+          <div class="text-[8px] font-bold text-black uppercase tracking-[0.06em]">${label}</div>
+          <div class="text-[11px] font-semibold text-black mt-0.5">${value || "—"}</div>
         </td>`,
     )
     .join("");
 
-  let normal = 0,
-    low = 0,
-    high = 0;
-  sections.forEach(([, sec]) => {
-    getSectionEntries(sec).forEach(([, field]) => {
-      if (!hasEvaluableStatus(field)) return;
-      const s = getStatus(field);
-      if (s === "normal") normal++;
-      else if (s === "low") low++;
-      else if (s === "high") high++;
-    });
-  });
-  const total = normal + low + high;
-
   const topBlock = isPad
     ? `<div class="h-[1.5in] bg-white"></div>`
-    : `<div class="bg-slate-800 py-4 px-5 flex items-start justify-between rounded-t-[10px]">
+    : `<div class="border-b-2 border-black py-4 px-1 flex items-start justify-between">
         <div>
-          <div class="text-[15px] font-bold text-white">${labInfo.name}</div>
-          <div class="text-[10px] text-slate-400 mt-[3px]">${labInfo.tagline}</div>
-          <div class="text-[9px] text-slate-500 mt-1">📍 ${labInfo.address}</div>
+          <div class="text-[16px] font-bold text-black uppercase tracking-wide">${labInfo.name}</div>
+          <div class="text-[10px] text-black italic mt-[3px]">${labInfo.tagline}</div>
+          <div class="text-[9px] text-black mt-1">${labInfo.address}</div>
         </div>
         <div class="text-right">
-          <div class="text-[9px] text-slate-400">📞 ${labInfo.phone}</div>
-          <div class="text-[9px] text-slate-400 mt-0.5">✉ ${labInfo.email}</div>
-          <div class="text-[9px] text-slate-500 mt-1 font-mono">Reg: ${labInfo.regNo}</div>
+          <div class="text-[9px] text-black">Tel: ${labInfo.phone}</div>
+          <div class="text-[9px] text-black mt-0.5">${labInfo.email}</div>
+          <div class="text-[9px] text-black mt-1">Reg. No: ${labInfo.regNo}</div>
         </div>
       </div>`;
 
   const footerBlock = isPad
     ? ""
-    : `<div class="py-2.5 px-5 border-t border-slate-100 bg-white print:fixed print:bottom-0 print:left-0 print:right-0">
+    : `<div class="py-2.5 px-1 border-t border-black bg-white print:fixed print:bottom-0 print:left-0 print:right-0">
         <table class="w-full max-w-[680px] mx-auto mb-2">
           <tr>
             <td class="w-[45%] pr-5">
-              <div class="h-[30px] border-b border-dashed border-slate-300"></div>
-              <div class="text-[9px] text-slate-400 mt-[3px]">Pathologist Signature &amp; Seal</div>
+              <div class="h-[30px] border-b border-dashed border-black"></div>
+              <div class="text-[9px] text-black mt-[3px]">Pathologist Signature &amp; Seal</div>
             </td>
             <td class="w-[10%]"></td>
             <td class="w-[45%] pl-5">
-              <div class="h-[30px] border-b border-dashed border-slate-300"></div>
-              <div class="text-[9px] text-slate-400 mt-[3px] text-right">Authorized Signatory</div>
+              <div class="h-[30px] border-b border-dashed border-black"></div>
+              <div class="text-[9px] text-black mt-[3px] text-right">Authorized Signatory</div>
             </td>
           </tr>
         </table>
-        <div class="text-[9px] text-slate-400 text-center max-w-[680px] mx-auto">
+        <div class="text-[9px] text-black text-center max-w-[680px] mx-auto">
           For qualified medical professionals only. Interpret results in full clinical context. · ${labInfo.name} · ${labInfo.phone}
         </div>
       </div>`;
@@ -423,33 +469,23 @@ function buildPrintHTML({ reportName, shortId, patient, labInfo, sections, print
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 </style>
 </head>
-<body class="font-sans bg-white text-slate-800 m-0 p-0">
+<body class="font-sans bg-white text-black m-0 p-0">
   <div class="max-w-[680px] mx-auto ${isPad ? "pb-5" : "pb-[90px]"}">
     ${topBlock}
-    <div class="bg-slate-100 py-2 px-5 flex items-center justify-between border-l border-r border-b border-slate-200">
-      <div class="text-sm font-bold text-slate-900">${reportName}</div>
-      ${shortId ? `<div class="text-[9px] text-slate-400 font-mono">Invoice No: ${shortId}</div>` : ""}
+    <div class="bg-gray-100 py-2 px-3 flex items-center justify-between border border-black border-t-0">
+      <div class="text-sm font-bold text-black uppercase tracking-wide">${reportName}</div>
+      ${shortId ? `<div class="text-[9px] text-black font-mono">Invoice No: ${shortId}</div>` : ""}
     </div>
-    <table class="w-full border-collapse border-l border-r border-b border-slate-200">
-      <tr class="border-b border-slate-200">${mainCells}</tr>
+    <table class="w-full border-collapse border border-black border-t-0">
+      <tr class="border-b border-black">${mainCells}</tr>
       <tr>
         <td colspan="5" class="py-[5px] px-3 bg-white">
-          <span class="text-[8px] font-bold text-gray-400 uppercase tracking-[0.06em] mr-2.5">Referred By</span>
-          <span class="text-[11px] font-semibold text-slate-800">${patient.referredBy || "—"}</span>
+          <span class="text-[8px] font-bold text-black uppercase tracking-[0.06em] mr-2.5">Referred By</span>
+          <span class="text-[11px] font-semibold text-black">${patient.referredBy || "—"}</span>
         </td>
       </tr>
     </table>
-    ${
-      total > 0
-        ? `<div class="bg-slate-50 py-[7px] px-5 border-l border-r border-b border-slate-200 text-[11px] flex gap-1.5">
-            <span class="text-slate-500">${total} parameters:</span>
-            <span class="font-bold text-emerald-600">${normal} Normal</span>
-            ${low > 0 ? `<span>·</span><span class="font-bold text-amber-600">${low} Low</span>` : ""}
-            ${high > 0 ? `<span>·</span><span class="font-bold text-red-600">${high} High</span>` : ""}
-          </div>`
-        : ""
-    }
-    <div class="p-3.5 px-5 border-l border-r border-slate-200">
+    <div class="pt-1 px-1">
       ${sections.map(([name, data], i) => renderSection(name, data, i)).join("")}
     </div>
   </div>
@@ -602,6 +638,9 @@ function ReportViewer({
 
   return (
     <div className="max-w-2xl mx-auto font-sans">
+      {/* Toolbar is app UI chrome, not part of the printed/PDF report — it
+          keeps its normal interactive styling rather than the report's
+          monochrome doc theme. */}
       <div className="flex items-center justify-end gap-2 mb-3">
         <button
           onClick={handleShare}
@@ -626,49 +665,48 @@ function ReportViewer({
         </button>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+      {/* Report body — this is the doc-style monochrome layout: black
+          rules, black text, boxed parameter/result/range/status cells,
+          matching what actually prints (PDF and browser print alike). */}
+      <div className="bg-white border border-black">
         {!isPad && (
-          <div className="bg-slate-800 px-5 py-4 flex items-start justify-between gap-4">
+          <div className="border-b-2 border-black px-5 py-4 flex items-start justify-between gap-4">
             <div className="flex items-start gap-3">
-              <div className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <FlaskConical className="w-5 h-5 text-white" />
+              <div className="w-9 h-9 border border-black flex items-center justify-center flex-shrink-0 mt-0.5">
+                <FlaskConical className="w-5 h-5 text-black" />
               </div>
               <div>
-                <p className="text-sm font-bold text-white">{labInfo.name}</p>
-                <p className="text-slate-400 text-[11px] mt-0.5">{labInfo.tagline}</p>
+                <p className="text-sm font-bold text-black uppercase tracking-wide">{labInfo.name}</p>
+                <p className="text-black text-[11px] mt-0.5 italic">{labInfo.tagline}</p>
                 <div className="flex items-center gap-1 mt-1.5">
-                  <MapPin className="w-2.5 h-2.5 text-slate-500 flex-shrink-0" />
-                  <p className="text-slate-500 text-[10px]">{labInfo.address}</p>
+                  <MapPin className="w-2.5 h-2.5 text-black flex-shrink-0" />
+                  <p className="text-black text-[10px]">{labInfo.address}</p>
                 </div>
               </div>
             </div>
             <div className="text-right flex-shrink-0 space-y-1">
               <div className="flex items-center justify-end gap-1">
-                <Phone className="w-2.5 h-2.5 text-slate-500" />
-                <p className="text-slate-400 text-[10px]">{labInfo.phone}</p>
+                <Phone className="w-2.5 h-2.5 text-black" />
+                <p className="text-black text-[10px]">{labInfo.phone}</p>
               </div>
               <div className="flex items-center justify-end gap-1">
-                <Mail className="w-2.5 h-2.5 text-slate-500" />
-                <p className="text-slate-400 text-[10px]">{labInfo.email}</p>
+                <Mail className="w-2.5 h-2.5 text-black" />
+                <p className="text-black text-[10px]">{labInfo.email}</p>
               </div>
-              <p className="text-slate-500 text-[10px] font-mono">Reg: {labInfo.regNo}</p>
+              <p className="text-black text-[10px]">Reg. No: {labInfo.regNo}</p>
             </div>
           </div>
         )}
 
-        <div className="flex items-center justify-between px-5 py-2.5 bg-slate-100 border-b border-slate-200">
+        <div className="flex items-center justify-between px-5 py-2.5 bg-gray-100 border-b border-black">
           <div className="flex items-center gap-2">
-            <FileText className="w-4 h-4 text-slate-500 flex-shrink-0" />
-            <h2 className="text-sm font-bold text-slate-900">{resolvedReportName}</h2>
+            <FileText className="w-4 h-4 text-black flex-shrink-0" />
+            <h2 className="text-sm font-bold text-black uppercase tracking-wide">{resolvedReportName}</h2>
           </div>
-          {shortId && <p className="text-[10px] text-slate-400 font-mono">Invoice No: {shortId}</p>}
+          {shortId && <p className="text-[10px] text-black font-mono">Invoice No: {shortId}</p>}
         </div>
 
         <PatientGrid patient={resolvedPatient} />
-
-        <div className="px-5 py-2 bg-slate-50 border-b border-slate-200">
-          <SummaryStrip sections={sections} />
-        </div>
 
         <div className="px-5 pt-4 pb-4">
           {sections.map(([sectionName, sectionData], i) => (
@@ -684,18 +722,18 @@ function ReportViewer({
       </div>
 
       {!isPad && (
-        <div className="mt-8 pt-6 border-t border-slate-200">
+        <div className="mt-8 pt-6 border-t border-black">
           <div className="grid grid-cols-2 gap-8 mb-5">
             <div>
-              <div className="h-10 border-b border-dashed border-slate-300" />
-              <p className="text-[10px] text-slate-400 mt-1.5">Pathologist Signature &amp; Seal</p>
+              <div className="h-10 border-b border-dashed border-black" />
+              <p className="text-[10px] text-black mt-1.5">Pathologist Signature &amp; Seal</p>
             </div>
             <div>
-              <div className="h-10 border-b border-dashed border-slate-300" />
-              <p className="text-[10px] text-slate-400 mt-1.5 text-right">Authorized Signatory</p>
+              <div className="h-10 border-b border-dashed border-black" />
+              <p className="text-[10px] text-black mt-1.5 text-right">Authorized Signatory</p>
             </div>
           </div>
-          <p className="text-[10px] text-slate-400 text-center leading-relaxed">
+          <p className="text-[10px] text-black text-center leading-relaxed">
             For qualified medical professionals only. Interpret results in full clinical context.
             <span className="mx-1.5">·</span>
             {labInfo.name}

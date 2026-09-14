@@ -5,11 +5,8 @@ import {
   XCircle,
   ChevronDown,
   Info,
-  TrendingUp,
-  TrendingDown,
   RotateCcw,
   Send,
-  AlertTriangle,
   Eye,
   ShieldCheck,
   Activity,
@@ -131,7 +128,7 @@ const defaultPatient = () => ({
 
 // ─── Range Logic ─────────────────────────────────────────────────────────────
 // standardRange.data is always tier-based now: an array of { label, comparator,
-// min, max } (Simple), age/gender/combined brackets each holding such an array.
+// min, max } (Simple), or age/gender brackets each holding such an array.
 export function getStandardRangeInfo(field, patientAge, patientGender) {
   const sr = field.standardRange;
   if (!sr || sr.type === "none") return null;
@@ -145,12 +142,6 @@ export function getStandardRangeInfo(field, patientAge, patientGender) {
     tiers = bracket?.tiers || [];
   } else if (sr.type === "gender" && patientGender && sr.data) {
     tiers = sr.data[patientGender] || [];
-  } else if (sr.type === "combined" && hasAge(patientAge) && patientGender && Array.isArray(sr.data)) {
-    const ageVal = ageToValue(patientAge);
-    const bracket = sr.data.find(
-      (b) => b.gender === patientGender && ageVal >= ageToValue(b.minAge) && ageVal <= ageToValue(b.maxAge),
-    );
-    tiers = bracket?.tiers || [];
   }
 
   if (!tiers || tiers.length === 0) return null;
@@ -201,6 +192,9 @@ function formatTierRange(t) {
   }
 }
 
+// No more low/high/normal classification — just resolve which tier the
+// value fell into and hand back its label/range as-is, to be printed as a
+// plain tag.
 export function evaluateStatus(value, rangeInfo) {
   if (!rangeInfo || value === "" || value === null || value === undefined) return null;
   const v = parseFloat(value);
@@ -209,23 +203,7 @@ export function evaluateStatus(value, rangeInfo) {
   const tier = rangeInfo.tiers.find((t) => tierMatches(t, v));
   if (!tier) return null;
 
-  const label = (tier.label || "").toLowerCase();
-  let status = "tag";
-  if (/low/.test(label)) status = "low";
-  else if (/high/.test(label)) status = "high";
-  else if (/normal|unremarkable|negative/.test(label)) status = "normal";
-  return { status, label: tier.label, range: formatTierRange(tier) };
-}
-
-// Convenience for callers that already have a plain { min, max } (not a field's
-// standardRange) and just want low/normal/high classification.
-export function getRangeStatus(value, range) {
-  if (!range || value === "" || value === null || value === undefined) return "neutral";
-  const v = parseFloat(value);
-  if (isNaN(v)) return "neutral";
-  if (v < range.min) return "low";
-  if (v > range.max) return "high";
-  return "normal";
+  return { label: tier.label, range: formatTierRange(tier) };
 }
 
 // ─── Reference Value Logic (text/textarea fields) ───────────────────────────
@@ -234,10 +212,18 @@ export function getReferenceValue(field, patientAge, patientGender) {
   if (!rv || rv.type === "none") return null;
   if (rv.type === "text" || rv.type === "textarea") return rv.data?.value || null;
   if (rv.type === "keyvalue" && Array.isArray(rv.data)) {
-    const pairs = rv.data.filter((p) => p.key || p.value).map((p) => `${p.key}: ${p.value}`);
-    return pairs.length ? pairs.join(", ") : null;
+    const pairs = rv.data.filter((p) => p.key || p.value).map((p) => ({ key: p.key || "", value: p.value || "" }));
+    return pairs.length ? pairs : null;
   }
   return null;
+}
+
+// For the compact entry-form footer badge only — flattens key-value pairs
+// into one readable line. The report/download views keep the structured
+// pairs and render an actual bordered table instead.
+function formatRefValueInline(refValue) {
+  if (Array.isArray(refValue)) return refValue.map((p) => `${p.key}: ${p.value}`).join(", ");
+  return refValue;
 }
 
 export function hydrateValuesFromReport(schema, existingReport) {
@@ -304,21 +290,6 @@ function RangeTooltip({ field }) {
               <div key={g}>
                 <div className="text-gray-500 text-[9px] uppercase tracking-wide mt-1.5 mb-0.5 capitalize">{g}</div>
                 {(tiers || []).map((t, j) => (
-                  <div key={j} className="text-gray-400 leading-7 font-mono text-[10.5px]">
-                    {t.label}: <span className="text-gray-200 font-medium">{formatTierRange(t)}</span>
-                  </div>
-                ))}
-              </div>
-            ))}
-
-          {sr.type === "combined" &&
-            Array.isArray(sr.data) &&
-            sr.data.map((b, i) => (
-              <div key={i}>
-                <div className="text-gray-500 text-[9px] uppercase tracking-wide mt-1.5 mb-0.5 capitalize">
-                  {b.gender}, {formatAge(b.minAge)}–{formatAge(b.maxAge)}
-                </div>
-                {(b.tiers || []).map((t, j) => (
                   <div key={j} className="text-gray-400 leading-7 font-mono text-[10.5px]">
                     {t.label}: <span className="text-gray-200 font-medium">{formatTierRange(t)}</span>
                   </div>
@@ -432,24 +403,12 @@ function FieldRow({ field, control, refNode, error }) {
   );
 }
 
+// Plain tag badge — no low/high/normal styling, just the tier's label.
 function RangeBadge({ evaluated }) {
   if (!evaluated) return null;
-  const cls =
-    evaluated.status === "low"
-      ? "bg-orange-50 text-orange-600 border-orange-600/25"
-      : evaluated.status === "high"
-        ? "bg-red-50 text-red-600 border-red-600/25"
-        : evaluated.status === "normal"
-          ? "bg-emerald-50 text-emerald-600 border-emerald-600/25"
-          : "bg-violet-50 text-violet-600 border-violet-600/25 normal-case";
   return (
-    <span
-      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold border ${cls}`}
-    >
-      {evaluated.status === "low" && <TrendingDown className="w-2.5 h-2.5" />}
-      {evaluated.status === "high" && <TrendingUp className="w-2.5 h-2.5" />}
-      {evaluated.status === "normal" && <CheckCircle2 className="w-2.5 h-2.5" />}
-      {evaluated.status === "tag" && <Tag className="w-2.5 h-2.5" />}
+    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold border bg-violet-50 text-violet-600 border-violet-600/25 normal-case">
+      <Tag className="w-2.5 h-2.5" />
       {evaluated.label}
     </span>
   );
@@ -468,13 +427,6 @@ function RangeRefContent({ field, rangeInfo, evaluated, hasValue }) {
 
 // ─── Number Field ────────────────────────────────────────────────────────────
 
-const STATUS_RING = {
-  ok: "border-emerald-600 ring-2 ring-emerald-600/10",
-  low: "border-orange-600 ring-2 ring-orange-600/10",
-  high: "border-red-600 ring-2 ring-red-600/10",
-  tag: "border-violet-600 ring-2 ring-violet-600/10",
-};
-
 function NumberField({ field, value, onChange, error, patientAge, patientGender }) {
   const rangeInfo = getStandardRangeInfo(field, patientAge, patientGender);
   const evaluated = evaluateStatus(value, rangeInfo);
@@ -482,10 +434,7 @@ function NumberField({ field, value, onChange, error, patientAge, patientGender 
 
   let statusCls = "border-gray-200";
   if (error) statusCls = "border-red-600 ring-2 ring-red-600/10 bg-red-50";
-  else if (hasValue && evaluated) {
-    const key = evaluated.status === "normal" ? "ok" : evaluated.status;
-    statusCls = STATUS_RING[key] || statusCls;
-  }
+  else if (hasValue && evaluated) statusCls = "border-violet-600 ring-2 ring-violet-600/10";
 
   const control = (
     <div
@@ -675,8 +624,15 @@ function TextareaField({ field, value, onChange, error, patientAge, patientGende
           className="w-full bg-transparent border-0 outline-none resize-none text-[13.5px] text-gray-900 p-3"
         />
       </div>
-      <div className="font-mono text-[10px] text-gray-400 text-right mt-1">
-        {(value || "").length}/{maxLength}
+      <div className="flex items-center justify-between mt-1">
+        {field.unit ? (
+          <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wide">{field.unit}</span>
+        ) : (
+          <span />
+        )}
+        <span className="font-mono text-[10px] text-gray-400">
+          {(value || "").length}/{maxLength}
+        </span>
       </div>
     </div>
   );
@@ -684,7 +640,7 @@ function TextareaField({ field, value, onChange, error, patientAge, patientGende
   const refNode = refValue ? (
     <span className="font-mono text-[11px] text-gray-500 flex items-center gap-1">
       <Tag className="w-[9px] h-[9px] text-violet-600" />
-      {refValue}
+      {formatRefValueInline(refValue)}
     </span>
   ) : null;
 
@@ -710,8 +666,15 @@ function TextInputField({ field, value, onChange, error, patientAge, patientGend
           onChange={(e) => onChange(e.target.value)}
           maxLength={maxLength}
           placeholder="Enter result"
-          className="w-full bg-transparent border-0 outline-none text-[13.5px] text-gray-900 py-2.5 px-3"
+          className={`w-full bg-transparent border-0 outline-none text-[13.5px] text-gray-900 py-2.5 pl-3 ${
+            field.unit ? "pr-14" : "pr-3"
+          }`}
         />
+        {field.unit && (
+          <span className="absolute right-0 top-0 h-full px-2.5 flex items-center bg-gray-100 border-l border-gray-200 rounded-r-lg font-mono text-[10px] font-medium text-gray-600 uppercase tracking-wide pointer-events-none">
+            {field.unit}
+          </span>
+        )}
       </div>
       <div className="font-mono text-[10px] text-gray-400 text-right mt-1">
         {(value || "").length}/{maxLength}
@@ -722,7 +685,7 @@ function TextInputField({ field, value, onChange, error, patientAge, patientGend
   const refNode = refValue ? (
     <span className="font-mono text-[11px] text-gray-500 flex items-center gap-1">
       <Tag className="w-[9px] h-[9px] text-violet-600" />
-      {refValue}
+      {formatRefValueInline(refValue)}
     </span>
   ) : null;
 
@@ -841,13 +804,6 @@ function SectionPanel({ section, sectionIndex, values, onChange, errors, patient
           {sectionIndex + 1}
         </div>
         <span className="flex-1 text-[13px] font-semibold text-white/90 tracking-wide">{section.name}</span>
-        <span
-          className={`font-mono text-[10px] font-medium px-2.5 py-1 rounded-full border ${
-            complete ? "bg-blue-600/30 text-blue-300 border-blue-600/40" : "bg-white/10 text-white/45 border-white/10"
-          }`}
-        >
-          {filledCount}/{fieldCount}
-        </span>
         <ChevronDown
           className={`w-[15px] h-[15px] text-white/30 transition-transform flex-shrink-0 ${!collapsed ? "rotate-180" : ""}`}
         />
@@ -881,6 +837,19 @@ function buildPayload(schema, values, patient) {
           if (evaluated) {
             entry.referenceRange = evaluated.range;
             entry.referenceTag = evaluated.label;
+          }
+          // Full tier set for the bracket that applies to this patient
+          // (age/gender already resolved by getStandardRangeInfo), each
+          // tier flagged with whether the patient's actual value fell
+          // into it — lets the report show the whole tier picture, not
+          // just the single matched label/range string.
+          if (rangeInfo?.tiers?.length) {
+            const v = parseFloat(val);
+            entry.referenceTiers = rangeInfo.tiers.map((t) => ({
+              label: t.label,
+              range: formatTierRange(t),
+              matched: !isNaN(v) && tierMatches(t, v),
+            }));
           }
         } else if (field.type === "input" || field.type === "textarea") {
           const refValue = getReferenceValue(field, patient.age, patient.gender);
@@ -966,17 +935,6 @@ function SchemaRenderer({ schema, onSubmit, loading = false }) {
   }).length;
   const progress = totalFields > 0 ? (totalFilled / totalFields) * 100 : null;
 
-  const numEvaluations = schema.sections.flatMap((sec, si) =>
-    sec.fields
-      .filter((f) => f.type === "number")
-      .map((f) => {
-        const rangeInfo = getStandardRangeInfo(f, patient.age, patient.gender);
-        return evaluateStatus(values[`${si}_${f.name}`], rangeInfo);
-      }),
-  );
-  const abnormalCount = numEvaluations.filter((e) => e && (e.status === "high" || e.status === "low")).length;
-  const normalCount = numEvaluations.filter((e) => e && e.status === "normal").length;
-
   if (!hasFields) {
     return (
       <div className="min-h-screen bg-gray-50 font-sans">
@@ -1025,22 +983,6 @@ function SchemaRenderer({ schema, onSubmit, loading = false }) {
                 <span className="text-[13px] text-gray-400 font-normal">/{totalFields}</span>
               </span>
             </div>
-            <div className="bg-gray-100 border border-gray-200 rounded-lg py-3 px-3.5 flex flex-col gap-0.5">
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">In Range</span>
-              <span
-                className={`font-mono text-xl font-semibold leading-none ${normalCount > 0 ? "text-emerald-600" : "text-gray-900"}`}
-              >
-                {normalCount}
-              </span>
-            </div>
-            <div className="bg-gray-100 border border-gray-200 rounded-lg py-3 px-3.5 flex flex-col gap-0.5">
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Abnormal</span>
-              <span
-                className={`font-mono text-xl font-semibold leading-none ${abnormalCount > 0 ? "text-red-600" : "text-gray-900"}`}
-              >
-                {abnormalCount}
-              </span>
-            </div>
           </div>
 
           {progress !== null && (
@@ -1063,21 +1005,6 @@ function SchemaRenderer({ schema, onSubmit, loading = false }) {
           )}
         </div>
 
-        {abnormalCount > 0 && (
-          <div className="flex items-start gap-3 py-3 px-4 rounded-lg border-l-[3px] border-orange-600 bg-orange-50 mb-3">
-            <AlertTriangle className="w-4 h-4 text-orange-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <div className="text-[11px] font-bold uppercase tracking-wide text-orange-800 mb-0.5">
-                Abnormal Values Detected
-              </div>
-              <div className="text-[12.5px] leading-relaxed text-orange-700">
-                {abnormalCount} result{abnormalCount > 1 ? "s" : ""} outside the standard reference range — please
-                review before submitting.
-              </div>
-            </div>
-          </div>
-        )}
-
         <PatientForm patient={patient} onChange={handlePatientChange} />
 
         <div className="flex flex-col gap-2.5 mb-4">
@@ -1094,18 +1021,6 @@ function SchemaRenderer({ schema, onSubmit, loading = false }) {
             />
           ))}
         </div>
-
-        {schema.hasStaticStandardRange && schema.staticStandardRange && (
-          <div className="flex items-start gap-3 py-3 px-4 rounded-lg border-l-[3px] border-orange-600 bg-orange-50 mb-3">
-            <Info className="w-[15px] h-[15px] text-orange-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <div className="text-[11px] font-bold uppercase tracking-wide text-orange-800 mb-0.5">
-                Standard Reference
-              </div>
-              <div className="text-[12.5px] leading-relaxed text-orange-700">{schema.staticStandardRange}</div>
-            </div>
-          </div>
-        )}
 
         {Object.keys(errors).length > 0 && (
           <div className="flex items-start gap-3 py-3 px-4 rounded-lg border-l-[3px] border-red-600 bg-red-50 mb-3">

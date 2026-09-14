@@ -25,7 +25,6 @@ import {
   Loader2,
   AlertCircle,
   X,
-  Info,
   Eye,
   EyeOff,
   Tags,
@@ -40,8 +39,6 @@ import {
 const INITIAL_SCHEMA = {
   description: "",
   testId: "",
-  hasStaticStandardRange: false,
-  staticStandardRange: "",
   sections: [{ id: Date.now(), name: "Section A", showTitleInReport: true, fields: [] }],
 };
 
@@ -197,7 +194,6 @@ const RANGE_SCOPES = [
   { value: "simple", label: "Simple" },
   { value: "age", label: "Age Based" },
   { value: "gender", label: "Gender Based" },
-  { value: "combined", label: "Complex (Age + Gender)" },
 ];
 
 // Reference Value on text/textarea fields uses its own scope set — no
@@ -229,7 +225,7 @@ const fieldTypeIcon = (type) => {
 };
 
 const defaultDataForScope = (scope) => {
-  if (scope === "age" || scope === "combined") return [];
+  if (scope === "age") return [];
   if (scope === "gender") return { male: [], female: [], other: [] };
   return []; // "simple" (and "none") — flat list of tiers
 };
@@ -622,58 +618,6 @@ function RangesGenderInput({ data = {}, onChange }) {
   );
 }
 
-function RangesCombinedInput({ data = [], onChange }) {
-  const brackets = Array.isArray(data) ? data : [];
-  const addBracket = () =>
-    onChange([...brackets, { gender: "male", minAge: emptyAge(), maxAge: { ...AGE_NO_LIMIT }, tiers: [] }]);
-  const removeBracket = (i) => onChange(brackets.filter((_, idx) => idx !== i));
-  const update = (i, key, val) => onChange(brackets.map((b, idx) => (idx === i ? { ...b, [key]: val } : b)));
-
-  return (
-    <div className="space-y-3 w-full">
-      {brackets.map((b, i) => (
-        <div key={i} className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2 w-full">
-          <div className="flex flex-wrap items-end gap-3 w-full">
-            <div>
-              <label className="text-xs text-gray-400 block mb-0.5">Gender</label>
-              <select
-                value={b.gender}
-                onChange={(e) => update(i, "gender", e.target.value)}
-                className="w-24 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
-              >
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-gray-400 block mb-0.5">Min Age</label>
-              <AgeInputGroup value={b.minAge} onChange={(v) => update(i, "minAge", v)} />
-            </div>
-            <div>
-              <label className="text-xs text-gray-400 block mb-0.5">Max Age (∞ = no limit)</label>
-              <AgeInputGroup value={b.maxAge} onChange={(v) => update(i, "maxAge", v)} isMax />
-            </div>
-            <button
-              onClick={() => removeBracket(i)}
-              className="ml-auto p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <TierListEditor tiers={b.tiers} onChange={(tiers) => update(i, "tiers", tiers)} dense />
-        </div>
-      ))}
-      <button
-        onClick={addBracket}
-        className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium px-2 py-1 hover:bg-blue-50 rounded-md transition-colors"
-      >
-        <Plus className="w-3.5 h-3.5" /> Add Bracket
-      </button>
-    </div>
-  );
-}
-
 function RefTextInput({ data = {}, onChange }) {
   return (
     <div className="w-full">
@@ -842,7 +786,6 @@ function StandardRangeSection({ field, sectionId }) {
           {scope === "simple" && <RangesSimpleInput data={data} onChange={setData} />}
           {scope === "age" && <RangesAgeInput data={data} onChange={setData} />}
           {scope === "gender" && <RangesGenderInput data={data} onChange={setData} />}
-          {scope === "combined" && <RangesCombinedInput data={data} onChange={setData} />}
         </div>
       )}
     </div>
@@ -1036,18 +979,31 @@ function FieldCard({ field, sectionId, fieldError, onDragStart, onDragOver, onDr
 
           {isTextType && (
             <>
-              <div className="w-40">
-                <label className="text-xs font-medium text-gray-600 block mb-1.5">Max Length</label>
-                <input
-                  type="number"
-                  value={field.maxLength ?? 200}
-                  onChange={(e) => {
-                    const parsed = parseInt(e.target.value, 10);
-                    updateField(sectionId, field.id, "maxLength", Number.isNaN(parsed) ? 200 : parsed);
-                  }}
-                  onWheel={preventWheelChange}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-medium text-gray-600 block mb-1.5">Max Length</label>
+                  <input
+                    type="number"
+                    value={field.maxLength ?? 200}
+                    onChange={(e) => {
+                      const parsed = parseInt(e.target.value, 10);
+                      updateField(sectionId, field.id, "maxLength", Number.isNaN(parsed) ? 200 : parsed);
+                    }}
+                    onWheel={preventWheelChange}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 block mb-1.5">
+                    Unit <span className="text-gray-400 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    value={field.unit || ""}
+                    onChange={(e) => updateField(sectionId, field.id, "unit", e.target.value)}
+                    placeholder="e.g. mg/dL"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
+                  />
+                </div>
               </div>
               <ReferenceValueSection field={field} sectionId={sectionId} />
             </>
@@ -1261,7 +1217,7 @@ function normalizeAgeRows(rows) {
 }
 
 function normalizeAgeData(scope, data) {
-  if (scope !== "age" && scope !== "combined") return data;
+  if (scope !== "age") return data;
   return normalizeAgeRows(data);
 }
 
@@ -1428,8 +1384,6 @@ export default function SchemaBuilder() {
   const getOutput = () => ({
     description: schema.description,
     testId: schema.testId,
-    hasStaticStandardRange: schema.hasStaticStandardRange,
-    staticStandardRange: schema.staticStandardRange,
     sections: schema.sections.map(({ id, ...sec }) => ({
       ...sec,
       showTitleInReport: sec.showTitleInReport !== false,
@@ -1600,33 +1554,6 @@ export default function SchemaBuilder() {
                     <AlertCircle className="w-3 h-3" />
                     {errors.description}
                   </p>
-                )}
-              </div>
-
-              <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Info className="w-4 h-4 text-gray-400" />
-                    <span className="text-sm font-medium text-gray-700">Static Standard Range</span>
-                    <span className="text-xs text-gray-400">(Optional global range)</span>
-                  </div>
-                  <button
-                    onClick={() => setSchemaField("hasStaticStandardRange", !schema.hasStaticStandardRange)}
-                    className={`relative w-11 h-6 rounded-full transition-colors ${schema.hasStaticStandardRange ? "bg-blue-500" : "bg-gray-300"}`}
-                  >
-                    <div
-                      className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${schema.hasStaticStandardRange ? "translate-x-5" : ""}`}
-                    />
-                  </button>
-                </div>
-                {schema.hasStaticStandardRange && (
-                  <textarea
-                    value={schema.staticStandardRange}
-                    onChange={(e) => setSchemaField("staticStandardRange", e.target.value)}
-                    rows={2}
-                    placeholder="Enter static standard range details..."
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 resize-none"
-                  />
                 )}
               </div>
             </div>

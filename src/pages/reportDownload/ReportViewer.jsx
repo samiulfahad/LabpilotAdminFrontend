@@ -97,36 +97,66 @@ function RefKeyValueBox({ pairs }) {
   );
 }
 
-// On-screen rendering of a number field's full Low/Normal/High tier set —
-// the same stacked-sub-row pattern as RefKeyValueBox (rows share the cell
-// and carry their own padding/divider, rather than a boxed table nested
-// inside a boxed cell), but dynamically generated from the field's
-// standardRange tiers rather than a fixed key/value list. The tier the
-// patient's actual value landed in gets a neutral gray fill, bold text,
-// and a small "Patient" marker so it's unambiguous which reference band
-// this specific patient falls under — the rest of the tiers are shown for
-// context (the same information the entry-form tooltip surfaces, now
-// printed directly into the report instead of hidden behind a hover).
-function RefTierBox({ tiers }) {
+// field.referenceTiers is now an array of GROUPS — [{ group, rows }] —
+// where `group` is null for a "simple" (ungrouped) standard range, or a
+// label like "Male" / "Female" / "18y – 60y" for gender/age scoped
+// ranges. This flattens that structure into a simple ordered list of
+// header/row lines so the React, print-HTML, and PDF renderers can all
+// share one layout pass instead of three separate implementations.
+function flattenTierGroups(groups) {
+  const lines = [];
+  groups.forEach((g) => {
+    if (g.group) lines.push({ type: "header", label: g.group });
+    g.rows.forEach((r) => lines.push({ type: "row", ...r }));
+  });
+  return lines;
+}
+
+// On-screen rendering of a number field's full reference table. Every
+// group defined on the field's standard range is shown (e.g. both Male
+// and Female blocks, or every age bracket) — not just the one that
+// applies to this patient — with a header band per group and a two-column
+// label|range layout per tier row, matching the lab's printed format.
+// The row the patient's actual value landed in (within their own group
+// only) gets a neutral gray fill, bold text, and a single bordered
+// tick+"Patient" marker below the range so it's unambiguous which
+// reference band this patient falls under.
+function RefTierBox({ groups }) {
+  const lines = flattenTierGroups(groups);
   return (
     <div className="w-full">
-      {tiers.map((t, i) => (
-        <div
-          key={i}
-          className={`px-3 py-1.5 text-[11px] leading-snug flex items-center justify-between gap-2 ${
-            i > 0 ? "border-t border-black" : ""
-          } ${t.matched ? "bg-gray-200" : ""}`}
-        >
-          <span className={t.matched ? "font-bold text-black" : "text-black"}>
-            {t.label}: {t.range}
-          </span>
-          {t.matched && (
-            <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide text-black flex-shrink-0">
-              <Check className="w-2.5 h-2.5" /> Patient
+      {lines.map((line, i) =>
+        line.type === "header" ? (
+          <div
+            key={i}
+            className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-black text-center bg-gray-100 ${
+              i > 0 ? "border-t border-black" : ""
+            }`}
+          >
+            {line.label}
+          </div>
+        ) : (
+          <div
+            key={i}
+            className={`grid grid-cols-2 text-[11px] leading-snug ${i > 0 ? "border-t border-black" : ""} ${
+              line.matched ? "bg-gray-200" : ""
+            }`}
+          >
+            <span className={`px-3 py-1 border-r border-black text-black ${line.matched ? "font-bold" : ""}`}>
+              {line.label}
             </span>
-          )}
-        </div>
-      ))}
+            <span className={`px-3 py-1 flex flex-col items-start gap-1 text-black ${line.matched ? "font-bold" : ""}`}>
+              {line.range}
+              {line.matched && (
+                <span className="inline-flex items-center gap-1 border border-black rounded-sm px-1.5 py-0.5">
+                  <Check className="w-2.5 h-2.5" />
+                  <span className="text-[8px] font-bold uppercase tracking-wide">Patient</span>
+                </span>
+              )}
+            </span>
+          </div>
+        ),
+      )}
     </div>
   );
 }
@@ -149,20 +179,37 @@ function refKeyValueRowsHtml(pairs) {
 
 // Print-HTML string equivalent of RefTierBox — mirrors refKeyValueRowsHtml's
 // approach (each row owns its padding + border-top divider, cell padding
-// dropped to zero by the caller) but adds the matched-tier gray fill, bold
-// weight, and a small "Patient" marker so the printed page shows exactly
-// which reference band this patient's result falls under.
-function refTierRowsHtml(tiers) {
-  return tiers
-    .map(
-      (t, i) =>
-        `<div style="font-size:10px;color:#000;padding:5px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;${
-          i > 0 ? "border-top:1px solid #000;" : ""
-        }${t.matched ? "background:#e6e6e6;font-weight:700;" : ""}">
-          <span>${t.label}: ${t.range}</span>
-          ${t.matched ? `<span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">✓ Patient</span>` : ""}
-        </div>`,
-    )
+// dropped to zero by the caller) but renders every group (with a header
+// band per group) and a two-column label|range layout per row, adding the
+// matched-row gray fill, bold weight, and a single bordered tick+"Patient"
+// marker below the range so the printed page shows exactly which
+// reference band this patient's result falls under, alongside the full
+// table for clinical context.
+function refTierRowsHtml(groups) {
+  const lines = flattenTierGroups(groups);
+  return lines
+    .map((line, i) => {
+      const borderTop = i > 0 ? "border-top:1px solid #000;" : "";
+      if (line.type === "header") {
+        return `<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#000;text-align:center;padding:4px 12px;background:#f3f4f6;${borderTop}">${line.label}</div>`;
+      }
+      return `<div style="display:grid;grid-template-columns:1fr 1fr;font-size:10px;color:#000;${borderTop}${
+        line.matched ? "background:#e6e6e6;font-weight:700;" : ""
+      }">
+        <div style="padding:4px 12px;border-right:1px solid #000;">${line.label}</div>
+        <div style="padding:4px 12px;display:flex;flex-direction:column;align-items:flex-start;gap:3px;">
+          <span>${line.range}</span>
+          ${
+            line.matched
+              ? `<span style="display:inline-flex;align-items:center;gap:4px;border:1px solid #000;padding:1px 6px;">
+                  <span style="font-size:9px;">✓</span>
+                  <span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Patient</span>
+                </span>`
+              : ""
+          }
+        </div>
+      </div>`;
+    })
     .join("");
 }
 
@@ -187,12 +234,13 @@ function ParamRow({ name, field, hasUnits, hasStatus, isAlt }) {
   const value = formatValue(field);
   const unit = field.unit || "";
   // referenceTiers (when present) is the richer, dynamically-generated
-  // view of the same match — it supersedes the single-line
-  // referenceRange/referenceTag string, so check for it first and skip
-  // getRefDisplay entirely when it's there. Older reports saved before
-  // this field existed simply fall through to the single-line format.
-  const tiers = Array.isArray(field.referenceTiers) && field.referenceTiers.length ? field.referenceTiers : null;
-  const ref = tiers ? null : getRefDisplay(field);
+  // view of the same match — a full list of groups (each with its own
+  // rows) rather than a single-line referenceRange/referenceTag string —
+  // so check for it first and skip getRefDisplay entirely when it's
+  // there. Older reports saved before this field existed simply fall
+  // through to the single-line format.
+  const tierGroups = Array.isArray(field.referenceTiers) && field.referenceTiers.length ? field.referenceTiers : null;
+  const ref = tierGroups ? null : getRefDisplay(field);
   const status = hasEvaluableStatus(field) ? getStatus(field) : null;
   return (
     <tr className={isAlt ? "bg-gray-50" : "bg-white"}>
@@ -207,11 +255,11 @@ function ParamRow({ name, field, hasUnits, hasStatus, isAlt }) {
       )}
       <td
         className={`text-xs text-black border-b border-black tabular-nums align-top ${hasStatus ? "border-r" : ""} ${
-          tiers || Array.isArray(ref) ? "p-0" : "px-3 py-2.5"
+          tierGroups || Array.isArray(ref) ? "p-0" : "px-3 py-2.5"
         }`}
       >
-        {tiers ? (
-          <RefTierBox tiers={tiers} />
+        {tierGroups ? (
+          <RefTierBox groups={tierGroups} />
         ) : Array.isArray(ref) ? (
           <RefKeyValueBox pairs={ref} />
         ) : (
@@ -358,12 +406,17 @@ function buildPrintHTML({ reportName, shortId, patient, labInfo, sections, print
       .map(([name, field], i) => {
         const value = formatValue(field);
         const unit = field.unit || "";
-        const tiers = Array.isArray(field.referenceTiers) && field.referenceTiers.length ? field.referenceTiers : null;
-        const ref = tiers ? null : getRefDisplay(field);
-        const refHtml = tiers ? refTierRowsHtml(tiers) : Array.isArray(ref) ? refKeyValueRowsHtml(ref) : ref || "—";
+        const tierGroups =
+          Array.isArray(field.referenceTiers) && field.referenceTiers.length ? field.referenceTiers : null;
+        const ref = tierGroups ? null : getRefDisplay(field);
+        const refHtml = tierGroups
+          ? refTierRowsHtml(tierGroups)
+          : Array.isArray(ref)
+            ? refKeyValueRowsHtml(ref)
+            : ref || "—";
         const status = hasEvaluableStatus(field) ? getStatus(field) : null;
         const rowBg = i % 2 === 1 ? "bg-gray-50" : "bg-white";
-        const refIsBoxed = Boolean(tiers) || Array.isArray(ref);
+        const refIsBoxed = Boolean(tierGroups) || Array.isArray(ref);
         const refBorder = hasStatus ? "border-r border-black" : "";
         const refCellClass = refIsBoxed
           ? `text-[11px] text-black border-b ${refBorder} align-top p-0`

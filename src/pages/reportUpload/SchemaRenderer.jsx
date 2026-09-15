@@ -148,6 +148,42 @@ export function getStandardRangeInfo(field, patientAge, patientGender) {
   return { tiers };
 }
 
+const GENDER_LABELS = { male: "Male", female: "Female", other: "Other" };
+
+// Unlike getStandardRangeInfo (which resolves only the ONE bracket/gender
+// that applies to this patient, for status evaluation), this returns EVERY
+// group defined on the field, each tagged with whether it's the patient's
+// own group — used to print the full reference table on the report
+// (e.g. Male + Female blocks both shown, with the patient's own row
+// highlighted inside whichever block applies to them).
+export function getAllReferenceGroups(field, patientAge, patientGender) {
+  const sr = field.standardRange;
+  if (!sr || sr.type === "none") return [];
+
+  if (sr.type === "simple") {
+    return Array.isArray(sr.data) && sr.data.length ? [{ group: null, tiers: sr.data, isPatientGroup: true }] : [];
+  }
+
+  if (sr.type === "gender" && sr.data) {
+    return ["male", "female", "other"]
+      .filter((g) => Array.isArray(sr.data[g]) && sr.data[g].length)
+      .map((g) => ({ group: GENDER_LABELS[g], tiers: sr.data[g], isPatientGroup: g === patientGender }));
+  }
+
+  if (sr.type === "age" && Array.isArray(sr.data)) {
+    const ageVal = hasAge(patientAge) ? ageToValue(patientAge) : null;
+    return sr.data
+      .filter((b) => Array.isArray(b.tiers) && b.tiers.length)
+      .map((b) => ({
+        group: `${formatAge(b.minAge)} – ${formatAge(b.maxAge)}`,
+        tiers: b.tiers,
+        isPatientGroup: ageVal !== null && ageVal >= ageToValue(b.minAge) && ageVal <= ageToValue(b.maxAge),
+      }));
+  }
+
+  return [];
+}
+
 function tierMatches(t, v) {
   const comparator = t.comparator || "between";
   const min = t.min === "" || t.min === null || t.min === undefined ? null : parseFloat(t.min);
@@ -838,17 +874,23 @@ function buildPayload(schema, values, patient) {
             entry.referenceRange = evaluated.range;
             entry.referenceTag = evaluated.label;
           }
-          // Full tier set for the bracket that applies to this patient
-          // (age/gender already resolved by getStandardRangeInfo), each
-          // tier flagged with whether the patient's actual value fell
-          // into it — lets the report show the whole tier picture, not
-          // just the single matched label/range string.
-          if (rangeInfo?.tiers?.length) {
+          // Full reference table for this field — EVERY group defined on
+          // the standard range (both Male and Female blocks, or every age
+          // bracket), not just the one that applies to this patient. Each
+          // group carries its own tier rows, and the row the patient's
+          // actual value fell into (within their own group only) is
+          // flagged `matched` so the report can highlight it while still
+          // printing the full table for clinical context.
+          const groups = getAllReferenceGroups(field, patient.age, patient.gender);
+          if (groups.length) {
             const v = parseFloat(val);
-            entry.referenceTiers = rangeInfo.tiers.map((t) => ({
-              label: t.label,
-              range: formatTierRange(t),
-              matched: !isNaN(v) && tierMatches(t, v),
+            entry.referenceTiers = groups.map((g) => ({
+              group: g.group, // null for "simple"; else "Male" / "Female" / "18y – 60y" etc.
+              rows: g.tiers.map((t) => ({
+                label: t.label,
+                range: formatTierRange(t),
+                matched: g.isPatientGroup && !isNaN(v) && tierMatches(t, v),
+              })),
             }));
           }
         } else if (field.type === "input" || field.type === "textarea") {

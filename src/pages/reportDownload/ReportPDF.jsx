@@ -6,7 +6,7 @@ const BLACK = "#000000";
 const LINE = "#000000";
 const HEAD_BG = "#ececec";
 const ALT_BG = "#f8f8f8";
-const ABNORMAL_BG = "#e6e6e6"; // used only for the matched-tier row inside RefTierBoxPDF
+const ABNORMAL_BG = "#e6e6e6"; // used for the matched-tier row inside RefTierBoxPDF
 
 const s = StyleSheet.create({
   page: { fontFamily: "Helvetica", fontSize: 9, color: BLACK, padding: 28, paddingBottom: 92 },
@@ -144,6 +144,21 @@ function getSectionEntries(sectionData) {
   return Object.entries(sectionData).filter(([key]) => key !== "__showTitle");
 }
 
+// field.referenceTiers is an array of GROUPS — [{ group, rows }] — where
+// `group` is null for a "simple" (ungrouped) standard range, or a label
+// like "Male" / "Female" / "18y – 60y" for gender/age scoped ranges. This
+// flattens that structure into a simple ordered list of header/row lines,
+// mirroring the same helper used by the web/print renderer so all three
+// surfaces produce an identical layout from the same data.
+function flattenTierGroups(groups) {
+  const lines = [];
+  groups.forEach((g) => {
+    if (g.group) lines.push({ type: "header", label: g.group });
+    g.rows.forEach((r) => lines.push({ type: "row", ...r }));
+  });
+  return lines;
+}
+
 // Status rendered as a bordered box with bold uppercase text — no color,
 // just whatever label was typed on the matched tier. Mirrors a stamped
 // "result flag" box on a printed report.
@@ -183,41 +198,92 @@ function RefKeyValueBoxPDF({ pairs }) {
   );
 }
 
-// A number field's full tier set — same stacked-sub-row pattern as
-// RefKeyValueBoxPDF (each row owns its padding + border-top divider, and
-// the parent cell hands over zero padding so the rows bleed edge-to-edge),
-// dynamically generated from the field's standardRange tiers. The tier the
-// patient's actual value landed in gets ABNORMAL_BG's neutral gray fill,
-// bold text, and a small "Patient" marker — grayscale only, matching this
+// A number field's full reference table. Every group defined on the
+// field's standard range is rendered (e.g. both Male and Female blocks,
+// or every age bracket) — not just the one that applies to this patient —
+// with a header band per group and a two-column label|range layout per
+// tier row, matching the lab's printed format (see Format.jpg). The row
+// the patient's actual value landed in (within their own group only) gets
+// ABNORMAL_BG's neutral gray fill, bold text, and a single bordered
+// tick+"Patient" marker below the range — grayscale only, matching this
 // report's black-ink-on-white-paper theme — so it's unambiguous which
-// reference band this specific patient falls under, with the other tiers
-// shown alongside for context.
-function RefTierBoxPDF({ tiers }) {
+// reference band this patient falls under, with every other tier/group
+// still shown for clinical context.
+function RefTierBoxPDF({ groups }) {
+  const lines = flattenTierGroups(groups);
   return (
     <View style={{ width: "100%" }}>
-      {tiers.map((t, i) => (
-        <View
-          key={i}
-          style={{
-            borderTop: i > 0 ? `1 solid ${LINE}` : undefined,
-            backgroundColor: t.matched ? ABNORMAL_BG : undefined,
-            paddingVertical: 4,
-            paddingHorizontal: 6,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <Text style={{ fontSize: 7, fontFamily: t.matched ? "Helvetica-Bold" : "Helvetica", color: BLACK }}>
-            {t.label}: {t.range}
-          </Text>
-          {t.matched && (
-            <Text style={{ fontSize: 6, fontFamily: "Helvetica-Bold", color: BLACK, textTransform: "uppercase" }}>
-              ✓ Patient
+      {lines.map((line, i) =>
+        line.type === "header" ? (
+          <View
+            key={i}
+            style={{
+              borderTop: i > 0 ? `1 solid ${LINE}` : undefined,
+              backgroundColor: HEAD_BG,
+              paddingVertical: 2,
+              paddingHorizontal: 6,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 6.5,
+                fontFamily: "Helvetica-Bold",
+                color: BLACK,
+                textAlign: "center",
+                textTransform: "uppercase",
+              }}
+            >
+              {line.label}
             </Text>
-          )}
-        </View>
-      ))}
+          </View>
+        ) : (
+          <View
+            key={i}
+            style={{
+              borderTop: i > 0 ? `1 solid ${LINE}` : undefined,
+              backgroundColor: line.matched ? ABNORMAL_BG : undefined,
+              flexDirection: "row",
+            }}
+          >
+            <View style={{ width: "50%", borderRight: `1 solid ${LINE}`, paddingVertical: 3, paddingHorizontal: 6 }}>
+              <Text style={{ fontSize: 7, fontFamily: line.matched ? "Helvetica-Bold" : "Helvetica", color: BLACK }}>
+                {line.label}
+              </Text>
+            </View>
+            <View
+              style={{
+                width: "50%",
+                paddingVertical: 3,
+                paddingHorizontal: 6,
+              }}
+            >
+              <Text style={{ fontSize: 7, fontFamily: line.matched ? "Helvetica-Bold" : "Helvetica", color: BLACK }}>
+                {line.range}
+              </Text>
+              {line.matched && (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 3,
+                    marginTop: 2,
+                    borderWidth: 1,
+                    borderColor: BLACK,
+                    alignSelf: "flex-start",
+                    paddingVertical: 1,
+                    paddingHorizontal: 4,
+                  }}
+                >
+                  <Text style={{ fontSize: 6.5, fontFamily: "Helvetica-Bold", color: BLACK }}>✓</Text>
+                  <Text style={{ fontSize: 6, fontFamily: "Helvetica-Bold", color: BLACK, textTransform: "uppercase" }}>
+                    Patient
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+        ),
+      )}
     </View>
   );
 }
@@ -261,31 +327,31 @@ function PDFSection({ sectionName, sectionData, index, showHeader }) {
             const value = String(field.value ?? "");
             const unit = field.unit || "";
             // referenceTiers (when present) is the richer, dynamically
-            // generated view of the same match — the full tier set with
-            // the patient's landed tier flagged — so it supersedes
-            // referenceRange/referenceValue and is checked first. Older
-            // reports saved before this field existed simply fall through
-            // to the single-range/KV-pair format below. referenceRange
-            // holds the matched tier's own bounds (e.g. "70–100", "> 10");
-            // referenceTag holds its label — shown separately in
-            // Ref. Range vs Status.
+            // generated view of the same match — a full list of groups
+            // (each with its own tier rows, one flagged as this patient's
+            // match) — so it supersedes referenceRange/referenceValue and
+            // is checked first. Older reports saved before this field
+            // existed simply fall through to the single-range/KV-pair
+            // format below. referenceRange holds the matched tier's own
+            // bounds (e.g. "70–100", "> 10"); referenceTag holds its
+            // label — shown separately in Ref. Range vs Status.
             // A result field can also carry a Key-Value Pair reference
             // (referenceValue as an array, e.g. Male/Female/Children) in
             // place of a single range — checked as a fallback so this
             // renders the boxed rows instead of dropping the reference.
-            const tiers =
+            const tierGroups =
               Array.isArray(field.referenceTiers) && field.referenceTiers.length ? field.referenceTiers : null;
-            const ref = tiers ? null : field.referenceRange || field.referenceValue || "";
-            const refIsKV = !tiers && Array.isArray(ref);
+            const ref = tierGroups ? null : field.referenceRange || field.referenceValue || "";
+            const refIsKV = !tierGroups && Array.isArray(ref);
             const status = getStatus(field);
             return (
               <View key={name} style={[s.tableRow, i % 2 === 1 && s.tableRowAlt]} wrap={false}>
                 <Text style={[s.td, { width: W.param }]}>{name}</Text>
                 <Text style={[s.td, s.tdBold, { width: W.result }]}>{value || "—"}</Text>
                 {hasUnits && <Text style={[s.td, s.tdMuted, { width: W.unit }]}>{unit || "—"}</Text>}
-                {tiers ? (
+                {tierGroups ? (
                   <View style={[hasStatus ? s.td : s.tdLast, { width: W.ref, padding: 0 }]}>
-                    <RefTierBoxPDF tiers={tiers} />
+                    <RefTierBoxPDF groups={tierGroups} />
                   </View>
                 ) : refIsKV ? (
                   <View style={[hasStatus ? s.td : s.tdLast, { width: W.ref, padding: 0 }]}>

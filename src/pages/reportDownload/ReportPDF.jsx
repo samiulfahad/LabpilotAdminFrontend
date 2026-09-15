@@ -204,11 +204,11 @@ function RefKeyValueBoxPDF({ pairs }) {
 // with a header band per group and a two-column label|range layout per
 // tier row, matching the lab's printed format (see Format.jpg). The row
 // the patient's actual value landed in (within their own group only) gets
-// ABNORMAL_BG's neutral gray fill, bold text, and a single bordered
-// tick+"Patient" marker below the range — grayscale only, matching this
-// report's black-ink-on-white-paper theme — so it's unambiguous which
-// reference band this patient falls under, with every other tier/group
-// still shown for clinical context.
+// ABNORMAL_BG's neutral gray fill, bold text, and a plain tick mark to the
+// right of the tier name (not on the range side) — grayscale only,
+// matching this report's black-ink-on-white-paper theme — so it's
+// unambiguous which reference band this patient falls under, with every
+// other tier/group still shown for clinical context.
 function RefTierBoxPDF({ groups }) {
   const lines = flattenTierGroups(groups);
   return (
@@ -245,10 +245,22 @@ function RefTierBoxPDF({ groups }) {
               flexDirection: "row",
             }}
           >
-            <View style={{ width: "50%", borderRight: `1 solid ${LINE}`, paddingVertical: 3, paddingHorizontal: 6 }}>
+            <View
+              style={{
+                width: "50%",
+                borderRight: `1 solid ${LINE}`,
+                paddingVertical: 3,
+                paddingHorizontal: 6,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 4,
+              }}
+            >
               <Text style={{ fontSize: 7, fontFamily: line.matched ? "Helvetica-Bold" : "Helvetica", color: BLACK }}>
                 {line.label}
               </Text>
+              {line.matched && <Text style={{ fontSize: 7, fontFamily: "Helvetica-Bold", color: BLACK }}>✓</Text>}
             </View>
             <View
               style={{
@@ -260,26 +272,6 @@ function RefTierBoxPDF({ groups }) {
               <Text style={{ fontSize: 7, fontFamily: line.matched ? "Helvetica-Bold" : "Helvetica", color: BLACK }}>
                 {line.range}
               </Text>
-              {line.matched && (
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 3,
-                    marginTop: 2,
-                    borderWidth: 1,
-                    borderColor: BLACK,
-                    alignSelf: "flex-start",
-                    paddingVertical: 1,
-                    paddingHorizontal: 4,
-                  }}
-                >
-                  <Text style={{ fontSize: 6.5, fontFamily: "Helvetica-Bold", color: BLACK }}>✓</Text>
-                  <Text style={{ fontSize: 6, fontFamily: "Helvetica-Bold", color: BLACK, textTransform: "uppercase" }}>
-                    Patient
-                  </Text>
-                </View>
-              )}
             </View>
           </View>
         ),

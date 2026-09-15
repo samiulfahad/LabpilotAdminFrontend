@@ -118,9 +118,9 @@ function flattenTierGroups(groups) {
 // applies to this patient — with a header band per group and a two-column
 // label|range layout per tier row, matching the lab's printed format.
 // The row the patient's actual value landed in (within their own group
-// only) gets a neutral gray fill, bold text, and a single bordered
-// tick+"Patient" marker below the range so it's unambiguous which
-// reference band this patient falls under.
+// only) gets a neutral gray fill, bold text, and a plain tick mark to the
+// right of the tier name (not on the range side) so it's unambiguous
+// which reference band this patient falls under.
 function RefTierBox({ groups }) {
   const lines = flattenTierGroups(groups);
   return (
@@ -142,18 +142,15 @@ function RefTierBox({ groups }) {
               line.matched ? "bg-gray-200" : ""
             }`}
           >
-            <span className={`px-3 py-1 border-r border-black text-black ${line.matched ? "font-bold" : ""}`}>
+            <span
+              className={`px-3 py-1 border-r border-black text-black flex items-center justify-between gap-1 ${
+                line.matched ? "font-bold" : ""
+              }`}
+            >
               {line.label}
+              {line.matched && <Check className="w-3 h-3 flex-shrink-0" />}
             </span>
-            <span className={`px-3 py-1 flex flex-col items-start gap-1 text-black ${line.matched ? "font-bold" : ""}`}>
-              {line.range}
-              {line.matched && (
-                <span className="inline-flex items-center gap-1 border border-black rounded-sm px-1.5 py-0.5">
-                  <Check className="w-2.5 h-2.5" />
-                  <span className="text-[8px] font-bold uppercase tracking-wide">Patient</span>
-                </span>
-              )}
-            </span>
+            <span className={`px-3 py-1 text-black ${line.matched ? "font-bold" : ""}`}>{line.range}</span>
           </div>
         ),
       )}
@@ -181,10 +178,10 @@ function refKeyValueRowsHtml(pairs) {
 // approach (each row owns its padding + border-top divider, cell padding
 // dropped to zero by the caller) but renders every group (with a header
 // band per group) and a two-column label|range layout per row, adding the
-// matched-row gray fill, bold weight, and a single bordered tick+"Patient"
-// marker below the range so the printed page shows exactly which
-// reference band this patient's result falls under, alongside the full
-// table for clinical context.
+// matched-row gray fill, bold weight, and a plain tick mark to the right
+// of the tier name (not on the range side) so the printed page shows
+// exactly which reference band this patient's result falls under,
+// alongside the full table for clinical context.
 function refTierRowsHtml(groups) {
   const lines = flattenTierGroups(groups);
   return lines
@@ -196,18 +193,11 @@ function refTierRowsHtml(groups) {
       return `<div style="display:grid;grid-template-columns:1fr 1fr;font-size:10px;color:#000;${borderTop}${
         line.matched ? "background:#e6e6e6;font-weight:700;" : ""
       }">
-        <div style="padding:4px 12px;border-right:1px solid #000;">${line.label}</div>
-        <div style="padding:4px 12px;display:flex;flex-direction:column;align-items:flex-start;gap:3px;">
-          <span>${line.range}</span>
-          ${
-            line.matched
-              ? `<span style="display:inline-flex;align-items:center;gap:4px;border:1px solid #000;padding:1px 6px;">
-                  <span style="font-size:9px;">✓</span>
-                  <span style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Patient</span>
-                </span>`
-              : ""
-          }
+        <div style="padding:4px 12px;border-right:1px solid #000;display:flex;align-items:center;justify-content:space-between;gap:6px;">
+          <span>${line.label}</span>
+          ${line.matched ? `<span style="font-size:10px;">✓</span>` : ""}
         </div>
+        <div style="padding:4px 12px;">${line.range}</div>
       </div>`;
     })
     .join("");

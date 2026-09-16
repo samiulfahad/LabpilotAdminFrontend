@@ -73,6 +73,21 @@ function getRefDisplay(field) {
   return field.referenceRange || field.referenceTag || field.referenceValue || "";
 }
 
+// field.referenceValue (for a keyvalue-scoped text/textarea field) is now
+// an array of GROUPS — [{ header, pairs: [{ key, value }] }] — where
+// `header` is optional. This flattens that into an ordered list of
+// header/row lines, mirroring flattenTierGroups below so both share one
+// layout idea: a header band is only inserted when a group actually has
+// one, so an ungrouped (header-less) group just contributes its bare rows.
+function flattenKeyValueGroups(groups) {
+  const lines = [];
+  groups.forEach((g) => {
+    if (g.header) lines.push({ type: "header", label: g.header });
+    g.pairs.forEach((p) => lines.push({ type: "row", key: p.key, value: p.value }));
+  });
+  return lines;
+}
+
 // On-screen rendering of a Key-Value Pair reference. This used to be its
 // own fully-bordered <table>, which drew a box inside the already-bordered
 // Ref. Range cell (box-in-a-box). The parent <td> now hands this component
@@ -80,19 +95,33 @@ function getRefDisplay(field) {
 // padding + border-top divider stretches edge-to-edge across the cell —
 // reading as real stacked boxed rows (like Male/Female/Children in the
 // docx template), not a thin line floating inside leftover cell padding.
-function RefKeyValueBox({ pairs }) {
+// A header band is only rendered for groups that were actually given one;
+// a header-less group just contributes its bare key : value rows.
+function RefKeyValueBox({ groups }) {
+  const lines = flattenKeyValueGroups(groups);
   return (
     <div className="w-full">
-      {pairs.map((p, i) => (
-        <div
-          key={i}
-          className={`px-3 py-2 text-[11px] font-bold text-black text-center leading-snug ${
-            i > 0 ? "border-t border-black" : ""
-          }`}
-        >
-          {p.key} : {p.value}
-        </div>
-      ))}
+      {lines.map((line, i) =>
+        line.type === "header" ? (
+          <div
+            key={i}
+            className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-black text-center bg-gray-100 ${
+              i > 0 ? "border-t border-black" : ""
+            }`}
+          >
+            {line.label}
+          </div>
+        ) : (
+          <div
+            key={i}
+            className={`px-3 py-2 text-[11px] font-bold text-black text-center leading-snug ${
+              i > 0 ? "border-t border-black" : ""
+            }`}
+          >
+            {line.key} : {line.value}
+          </div>
+        ),
+      )}
     </div>
   );
 }
@@ -162,15 +191,18 @@ function RefTierBox({ groups }) {
 // carries its own padding and a border-top divider, and the parent <td>
 // (see renderSection below) drops its padding for this case so the rows
 // bleed edge-to-edge across the cell, reading as real boxed rows rather
-// than a thin line floating inside the cell's normal padding.
-function refKeyValueRowsHtml(pairs) {
-  return pairs
-    .map(
-      (p, i) =>
-        `<div style="font-size:10px;font-weight:700;color:#000;text-align:center;padding:6px 12px;${
-          i > 0 ? "border-top:1px solid #000;" : ""
-        }">${p.key} : ${p.value}</div>`,
-    )
+// than a thin line floating inside the cell's normal padding. A header
+// band is only printed for groups that were actually given one.
+function refKeyValueRowsHtml(groups) {
+  const lines = flattenKeyValueGroups(groups);
+  return lines
+    .map((line, i) => {
+      const borderTop = i > 0 ? "border-top:1px solid #000;" : "";
+      if (line.type === "header") {
+        return `<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#000;text-align:center;padding:4px 12px;background:#f3f4f6;${borderTop}">${line.label}</div>`;
+      }
+      return `<div style="font-size:10px;font-weight:700;color:#000;text-align:center;padding:6px 12px;${borderTop}">${line.key} : ${line.value}</div>`;
+    })
     .join("");
 }
 
@@ -251,7 +283,7 @@ function ParamRow({ name, field, hasUnits, hasStatus, isAlt }) {
         {tierGroups ? (
           <RefTierBox groups={tierGroups} />
         ) : Array.isArray(ref) ? (
-          <RefKeyValueBox pairs={ref} />
+          <RefKeyValueBox groups={ref} />
         ) : (
           ref || <span className="text-gray-300">—</span>
         )}

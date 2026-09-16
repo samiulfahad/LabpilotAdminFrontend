@@ -647,46 +647,110 @@ function RefTextareaInput({ data = {}, onChange }) {
   );
 }
 
+// ─── Key-Value Pair reference (grouped, header optional) ────────────────────
+// Data shape: an array of GROUPS — [{ id, header, pairs: [{ id, key, value }] }].
+// `header` is a free-typed, OPTIONAL label per group (like "Male" / "Positive"
+// / "Fasting") — leave it blank and the group renders with no header band at
+// all, just its bare key-value rows. You can add as many groups as you like,
+// and each group can hold as many key-value pairs as you like. This mirrors
+// the age/gender bracket editors above, but the grouping label here is
+// free text rather than a fixed set, since this reference type is manually
+// authored rather than compared against a numeric result.
 const newKeyValue = () => ({ id: Date.now() + Math.random(), key: "", value: "" });
+const newKVGroup = () => ({ id: Date.now() + Math.random(), header: "", pairs: [] });
 
 function RefKeyValueInput({ data = [], onChange }) {
-  const rows = Array.isArray(data) ? data : [];
-  const addRow = () => onChange([...rows, newKeyValue()]);
-  const removeRow = (i) => onChange(rows.filter((_, idx) => idx !== i));
-  const update = (i, key, val) => onChange(rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
+  const groups = Array.isArray(data) ? data : [];
+
+  const addGroup = () => onChange([...groups, newKVGroup()]);
+  const removeGroup = (gi) => onChange(groups.filter((_, idx) => idx !== gi));
+  const updateGroup = (gi, key, val) => onChange(groups.map((g, idx) => (idx === gi ? { ...g, [key]: val } : g)));
+
+  const addPair = (gi) => updateGroup(gi, "pairs", [...(groups[gi]?.pairs || []), newKeyValue()]);
+  const removePair = (gi, pi) =>
+    updateGroup(
+      gi,
+      "pairs",
+      (groups[gi]?.pairs || []).filter((_, idx) => idx !== pi),
+    );
+  const updatePair = (gi, pi, key, val) =>
+    updateGroup(
+      gi,
+      "pairs",
+      (groups[gi]?.pairs || []).map((p, idx) => (idx === pi ? { ...p, [key]: val } : p)),
+    );
 
   return (
-    <div className="space-y-2 w-full">
-      {rows.map((row, i) => (
-        <div
-          key={row.id || i}
-          className="flex items-center gap-2 p-2 bg-white rounded-lg border border-gray-200 w-full"
-        >
-          <input
-            value={row.key}
-            onChange={(e) => update(i, "key", e.target.value)}
-            placeholder="Key (e.g. Color)"
-            className="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
-          />
-          <input
-            value={row.value}
-            onChange={(e) => update(i, "value", e.target.value)}
-            placeholder="Value (e.g. Straw Yellow)"
-            className="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
-          />
+    <div className="space-y-3 w-full">
+      {groups.map((group, gi) => (
+        <div key={group.id || gi} className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2 w-full">
+          <div className="flex items-center gap-2">
+            <input
+              value={group.header || ""}
+              onChange={(e) => updateGroup(gi, "header", e.target.value)}
+              placeholder="Header (optional) — e.g. Male, Positive, Fasting"
+              className="flex-1 min-w-0 px-2.5 py-1.5 border border-gray-200 rounded-md text-xs font-semibold text-gray-700 focus:outline-none focus:ring-1 focus:ring-amber-300 bg-white"
+            />
+            <button
+              onClick={() => removeGroup(gi)}
+              className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors flex-shrink-0"
+              title="Remove this header group"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            {(group.pairs || []).map((row, pi) => (
+              <div
+                key={row.id || pi}
+                className="flex items-center gap-2 p-2 bg-white rounded-lg border border-gray-200 w-full"
+              >
+                <input
+                  value={row.key}
+                  onChange={(e) => updatePair(gi, pi, "key", e.target.value)}
+                  placeholder="Key (e.g. Color)"
+                  className="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
+                />
+                <input
+                  value={row.value}
+                  onChange={(e) => updatePair(gi, pi, "value", e.target.value)}
+                  placeholder="Value (e.g. Straw Yellow)"
+                  className="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
+                />
+                <button
+                  onClick={() => removePair(gi, pi)}
+                  className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors flex-shrink-0"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+            {(group.pairs || []).length === 0 && (
+              <p className="text-xs text-gray-400 italic px-1">No pairs yet in this group</p>
+            )}
+          </div>
+
           <button
-            onClick={() => removeRow(i)}
-            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors flex-shrink-0"
+            onClick={() => addPair(gi)}
+            className="flex items-center gap-1.5 text-xs text-amber-600 hover:text-amber-700 font-medium px-2 py-1 hover:bg-amber-50 rounded-md transition-colors"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Plus className="w-3.5 h-3.5" /> Add Pair
           </button>
         </div>
       ))}
+
+      {groups.length === 0 && (
+        <p className="text-xs text-gray-400 italic px-1">
+          No groups yet — add one below. A header is optional; leave it blank for a plain (ungrouped) list of pairs.
+        </p>
+      )}
+
       <button
-        onClick={addRow}
-        className="flex items-center gap-1.5 text-xs text-amber-600 hover:text-amber-700 font-medium px-2 py-1 hover:bg-amber-50 rounded-md transition-colors"
+        onClick={addGroup}
+        className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium px-2 py-1 hover:bg-blue-50 rounded-md transition-colors"
       >
-        <Plus className="w-3.5 h-3.5" /> Add Pair
+        <Plus className="w-3.5 h-3.5" /> Add Header Group
       </button>
     </div>
   );
@@ -1221,6 +1285,19 @@ function normalizeAgeData(scope, data) {
   return normalizeAgeRows(data);
 }
 
+// Reports/schemas saved before header-grouping existed stored Key-Value
+// Pair data as a flat array of { key, value } rows with no grouping at
+// all. Wrap any such legacy data in a single ungrouped group (empty
+// header) so it renders identically to before, while anything already
+// saved in the new { header, pairs } shape passes through untouched.
+function normalizeKeyValueData(data) {
+  if (!Array.isArray(data)) return [];
+  if (data.length === 0) return [];
+  const looksGrouped = data.every((item) => item && Array.isArray(item.pairs));
+  if (looksGrouped) return data;
+  return [{ id: Date.now() + Math.random(), header: "", pairs: data }];
+}
+
 function normalizeSchema(apiSchema) {
   return {
     ...apiSchema,
@@ -1244,7 +1321,10 @@ function normalizeSchema(apiSchema) {
         referenceValue: f.referenceValue
           ? {
               type: f.referenceValue.type || "none",
-              data: f.referenceValue.data ?? (f.referenceValue.type === "keyvalue" ? [] : {}),
+              data:
+                (f.referenceValue.type || "none") === "keyvalue"
+                  ? normalizeKeyValueData(f.referenceValue.data)
+                  : (f.referenceValue.data ?? {}),
             }
           : emptyReferenceValue(),
       })),

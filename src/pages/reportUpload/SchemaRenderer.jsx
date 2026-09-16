@@ -243,22 +243,43 @@ export function evaluateStatus(value, rangeInfo) {
 }
 
 // ─── Reference Value Logic (text/textarea fields) ───────────────────────────
+// For "keyvalue" scope, field.referenceValue.data is an array of GROUPS —
+// [{ header, pairs: [{ key, value }] }] — where `header` is optional (may
+// be "" / undefined) and each group can hold any number of key-value
+// pairs. This returns that same grouped shape (filtered down to groups
+// that actually have at least one non-empty pair) so the report renderers
+// can print a header band only where one was actually entered.
 export function getReferenceValue(field, patientAge, patientGender) {
   const rv = field.referenceValue;
   if (!rv || rv.type === "none") return null;
   if (rv.type === "text" || rv.type === "textarea") return rv.data?.value || null;
   if (rv.type === "keyvalue" && Array.isArray(rv.data)) {
-    const pairs = rv.data.filter((p) => p.key || p.value).map((p) => ({ key: p.key || "", value: p.value || "" }));
-    return pairs.length ? pairs : null;
+    const groups = rv.data
+      .map((g) => ({
+        header: g?.header || "",
+        pairs: (g?.pairs || [])
+          .filter((p) => p.key || p.value)
+          .map((p) => ({ key: p.key || "", value: p.value || "" })),
+      }))
+      .filter((g) => g.pairs.length > 0);
+    return groups.length ? groups : null;
   }
   return null;
 }
 
-// For the compact entry-form footer badge only — flattens key-value pairs
-// into one readable line. The report/download views keep the structured
-// pairs and render an actual bordered table instead.
+// For the compact entry-form footer badge only — flattens the grouped
+// key-value data into one readable line (e.g. "Male — Color: Straw,
+// Odour: None · Female — Color: Pale"). The report/download views keep
+// the structured groups and render real bordered rows instead.
 function formatRefValueInline(refValue) {
-  if (Array.isArray(refValue)) return refValue.map((p) => `${p.key}: ${p.value}`).join(", ");
+  if (Array.isArray(refValue)) {
+    return refValue
+      .map((g) => {
+        const pairsStr = g.pairs.map((p) => `${p.key}: ${p.value}`).join(", ");
+        return g.header ? `${g.header} — ${pairsStr}` : pairsStr;
+      })
+      .join(" · ");
+  }
   return refValue;
 }
 

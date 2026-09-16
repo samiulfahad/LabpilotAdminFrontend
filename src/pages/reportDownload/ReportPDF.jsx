@@ -90,6 +90,7 @@ const s = StyleSheet.create({
     padding: "5 8",
     borderRight: `1 solid ${LINE}`,
     color: BLACK,
+    flexShrink: 1,
   },
   thLast: {
     fontSize: 7,
@@ -98,11 +99,12 @@ const s = StyleSheet.create({
     letterSpacing: 0.3,
     padding: "5 8",
     color: BLACK,
+    flexShrink: 1,
   },
   tableRow: { flexDirection: "row", borderBottom: `1 solid ${LINE}` },
   tableRowAlt: { backgroundColor: ALT_BG },
-  td: { fontSize: 9, padding: "5 8", borderRight: `1 solid ${LINE}`, color: BLACK },
-  tdLast: { fontSize: 9, padding: "5 8", color: BLACK },
+  td: { fontSize: 9, padding: "5 8", borderRight: `1 solid ${LINE}`, color: BLACK, flexShrink: 1 },
+  tdLast: { fontSize: 9, padding: "5 8", color: BLACK, flexShrink: 1 },
   tdBold: { fontFamily: "Helvetica-Bold" },
   tdMuted: { fontSize: 8, color: BLACK },
 
@@ -144,6 +146,17 @@ function getSectionEntries(sectionData) {
   return Object.entries(sectionData).filter(([key]) => key !== "__showTitle");
 }
 
+// Turns a relative weight (the old fixed "34%"-style numbers) into a
+// flexible column: flexBasis:0 + flexGrow:weight shares the row's width
+// proportionally between columns (like the original percentages), but
+// flexShrink:1 lets a column that's given too little room shrink instead
+// of forcing its Text to overflow past its edge — combined with Text's
+// default wrapping, long parameter names/labels/values wrap onto extra
+// lines instead of getting cropped at the column boundary.
+function colFlex(weight) {
+  return { flexBasis: 0, flexGrow: weight, flexShrink: 1 };
+}
+
 // field.referenceTiers is an array of GROUPS — [{ group, rows }] — where
 // `group` is null for a "simple" (ungrouped) standard range, or a label
 // like "Male" / "Female" / "18y – 60y" for gender/age scoped ranges. This
@@ -177,23 +190,70 @@ function StatusBoxPDF({ label }) {
 // so each row's own padding + border-top stretches edge-to-edge across
 // the cell — real boxed rows (Male/Female/Children stacked in one cell),
 // not a thin centered line floating inside leftover cell padding.
-function RefKeyValueBoxPDF({ pairs }) {
+// field.referenceValue (for a keyvalue-scoped text/textarea field) is now
+// an array of GROUPS — [{ header, pairs: [{ key, value }] }] — where
+// `header` is optional. This flattens that into an ordered list of
+// header/row lines, mirroring flattenTierGroups above so both share one
+// layout idea: a header band is only inserted when a group actually has
+// one, so an ungrouped (header-less) group just contributes its bare rows.
+function flattenKeyValueGroups(groups) {
+  const lines = [];
+  groups.forEach((g) => {
+    if (g.header) lines.push({ type: "header", label: g.header });
+    g.pairs.forEach((p) => lines.push({ type: "row", key: p.key, value: p.value }));
+  });
+  return lines;
+}
+
+// A Key-Value Pair reference — stacked rows with a border-top divider
+// between them, no outer box of its own. The parent cell hands this
+// component the full cell area with zero padding (see call sites below),
+// so each row's own padding + border-top stretches edge-to-edge across
+// the cell — real boxed rows (Male/Female/Children stacked in one cell),
+// not a thin centered line floating inside leftover cell padding. A
+// header band is only rendered for groups that were actually given one.
+function RefKeyValueBoxPDF({ groups }) {
+  const lines = flattenKeyValueGroups(groups);
   return (
     <View style={{ width: "100%" }}>
-      {pairs.map((p, i) => (
-        <View
-          key={i}
-          style={{
-            borderTop: i > 0 ? `1 solid ${LINE}` : undefined,
-            paddingVertical: 4,
-            paddingHorizontal: 6,
-          }}
-        >
-          <Text style={{ fontSize: 7, fontFamily: "Helvetica-Bold", color: BLACK, textAlign: "center" }}>
-            {p.key} : {p.value}
-          </Text>
-        </View>
-      ))}
+      {lines.map((line, i) =>
+        line.type === "header" ? (
+          <View
+            key={i}
+            style={{
+              borderTop: i > 0 ? `1 solid ${LINE}` : undefined,
+              backgroundColor: HEAD_BG,
+              paddingVertical: 2,
+              paddingHorizontal: 6,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 6.5,
+                fontFamily: "Helvetica-Bold",
+                color: BLACK,
+                textAlign: "center",
+                textTransform: "uppercase",
+              }}
+            >
+              {line.label}
+            </Text>
+          </View>
+        ) : (
+          <View
+            key={i}
+            style={{
+              borderTop: i > 0 ? `1 solid ${LINE}` : undefined,
+              paddingVertical: 4,
+              paddingHorizontal: 6,
+            }}
+          >
+            <Text style={{ fontSize: 7, fontFamily: "Helvetica-Bold", color: BLACK, textAlign: "center" }}>
+              {line.key} : {line.value}
+            </Text>
+          </View>
+        ),
+      )}
     </View>
   );
 }
@@ -247,7 +307,9 @@ function RefTierBoxPDF({ groups }) {
           >
             <View
               style={{
-                width: "50%",
+                flexBasis: 0,
+                flexGrow: 1,
+                flexShrink: 1,
                 borderRight: `1 solid ${LINE}`,
                 paddingVertical: 3,
                 paddingHorizontal: 6,
@@ -264,7 +326,9 @@ function RefTierBoxPDF({ groups }) {
             </View>
             <View
               style={{
-                width: "50%",
+                flexBasis: 0,
+                flexGrow: 1,
+                flexShrink: 1,
                 paddingVertical: 3,
                 paddingHorizontal: 6,
               }}
@@ -289,11 +353,11 @@ function PDFSection({ sectionName, sectionData, index, showHeader }) {
 
   const W = hasUnits
     ? hasStatus
-      ? { param: "30%", result: "14%", unit: "12%", ref: "24%", status: "20%" }
-      : { param: "34%", result: "18%", unit: "14%", ref: "34%" }
+      ? { param: 30, result: 14, unit: 12, ref: 24, status: 20 }
+      : { param: 34, result: 18, unit: 14, ref: 34 }
     : hasStatus
-      ? { param: "34%", result: "18%", ref: "28%", status: "20%" }
-      : { param: "38%", result: "22%", ref: "40%" };
+      ? { param: 34, result: 18, ref: 28, status: 20 }
+      : { param: 38, result: 22, ref: 40 };
 
   return (
     <View style={s.sectionWrap} wrap={false}>
@@ -309,11 +373,11 @@ function PDFSection({ sectionName, sectionData, index, showHeader }) {
       {resultEntries.length > 0 && (
         <View>
           <View style={s.tableHead}>
-            <Text style={[s.th, { width: W.param }]}>Parameter</Text>
-            <Text style={[s.th, { width: W.result }]}>Result</Text>
-            {hasUnits && <Text style={[s.th, { width: W.unit }]}>Unit</Text>}
-            <Text style={[hasStatus ? s.th : s.thLast, { width: W.ref }]}>Reference Range</Text>
-            {hasStatus && <Text style={[s.thLast, { width: W.status }]}>Status</Text>}
+            <Text style={[s.th, colFlex(W.param)]}>Parameter</Text>
+            <Text style={[s.th, colFlex(W.result)]}>Result</Text>
+            {hasUnits && <Text style={[s.th, colFlex(W.unit)]}>Unit</Text>}
+            <Text style={[hasStatus ? s.th : s.thLast, colFlex(W.ref)]}>Reference Range</Text>
+            {hasStatus && <Text style={[s.thLast, colFlex(W.status)]}>Status</Text>}
           </View>
           {resultEntries.map(([name, field], i) => {
             const value = String(field.value ?? "");
@@ -338,22 +402,22 @@ function PDFSection({ sectionName, sectionData, index, showHeader }) {
             const status = getStatus(field);
             return (
               <View key={name} style={[s.tableRow, i % 2 === 1 && s.tableRowAlt]} wrap={false}>
-                <Text style={[s.td, { width: W.param }]}>{name}</Text>
-                <Text style={[s.td, s.tdBold, { width: W.result }]}>{value || "—"}</Text>
-                {hasUnits && <Text style={[s.td, s.tdMuted, { width: W.unit }]}>{unit || "—"}</Text>}
+                <Text style={[s.td, colFlex(W.param)]}>{name}</Text>
+                <Text style={[s.td, s.tdBold, colFlex(W.result)]}>{value || "—"}</Text>
+                {hasUnits && <Text style={[s.td, s.tdMuted, colFlex(W.unit)]}>{unit || "—"}</Text>}
                 {tierGroups ? (
-                  <View style={[hasStatus ? s.td : s.tdLast, { width: W.ref, padding: 0 }]}>
+                  <View style={[hasStatus ? s.td : s.tdLast, colFlex(W.ref), { padding: 0 }]}>
                     <RefTierBoxPDF groups={tierGroups} />
                   </View>
                 ) : refIsKV ? (
-                  <View style={[hasStatus ? s.td : s.tdLast, { width: W.ref, padding: 0 }]}>
-                    <RefKeyValueBoxPDF pairs={ref} />
+                  <View style={[hasStatus ? s.td : s.tdLast, colFlex(W.ref), { padding: 0 }]}>
+                    <RefKeyValueBoxPDF groups={ref} />
                   </View>
                 ) : (
-                  <Text style={[hasStatus ? s.td : s.tdLast, s.tdMuted, { width: W.ref }]}>{ref || "—"}</Text>
+                  <Text style={[hasStatus ? s.td : s.tdLast, s.tdMuted, colFlex(W.ref)]}>{ref || "—"}</Text>
                 )}
                 {hasStatus && (
-                  <View style={[s.tdLast, { width: W.status }]}>
+                  <View style={[s.tdLast, colFlex(W.status)]}>
                     <StatusBoxPDF label={status} />
                   </View>
                 )}
@@ -370,12 +434,12 @@ function PDFSection({ sectionName, sectionData, index, showHeader }) {
             const isKV = Array.isArray(field.referenceValue);
             return (
               <View key={name} style={[s.tableRow, i % 2 === 1 && s.tableRowAlt]} wrap={false}>
-                <Text style={[s.td, { width: "32%" }]}>{name}</Text>
+                <Text style={[s.td, colFlex(32)]}>{name}</Text>
                 {isKV ? (
                   <View style={{ flex: 1, flexDirection: "row", alignItems: "center" }}>
                     <Text style={[s.tdBold, { fontSize: 9, color: BLACK, padding: "5 8" }]}>{val || "—"}</Text>
                     <View style={{ flex: 1 }}>
-                      <RefKeyValueBoxPDF pairs={field.referenceValue} />
+                      <RefKeyValueBoxPDF groups={field.referenceValue} />
                     </View>
                   </View>
                 ) : (

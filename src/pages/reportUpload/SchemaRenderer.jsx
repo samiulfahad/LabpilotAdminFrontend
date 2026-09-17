@@ -12,6 +12,7 @@ import {
   Activity,
   User,
   Tag,
+  Sparkles,
 } from "lucide-react";
 
 // ─── Age Helpers ────────────────────────────────────────────────────────────
@@ -438,7 +439,27 @@ function PatientForm({ patient, onChange }) {
 
 // ─── Shared Row Layout ───────────────────────────────────────────────────────
 
-function FieldRow({ field, control, refNode, error }) {
+// A "smart" field is a number field wired to a standard range — its result
+// isn't just the raw entered value, it's evaluated against comparison
+// tiers (simple/age/gender-scoped) to derive a label. Every other field
+// type is captured as-is with no comparison logic.
+function isSmartField(field) {
+  return field.type === "number" && !!field.standardRange?.type && field.standardRange.type !== "none";
+}
+
+function SmartBadge() {
+  return (
+    <span
+      title="Smart field — the result is labeled by comparing it against configured reference ranges"
+      className="inline-flex items-center gap-0.5 px-1.5 py-[1px] rounded-full text-[9px] font-bold uppercase tracking-wide bg-violet-50 text-violet-600 border border-violet-200 align-middle"
+    >
+      <Sparkles className="w-2.5 h-2.5" />
+      Smart
+    </span>
+  );
+}
+
+function FieldRow({ field, control, refNode, error, smart }) {
   return (
     <div
       className={`grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-4 py-3.5 border-b border-gray-100 last:border-b-0 ${
@@ -446,9 +467,10 @@ function FieldRow({ field, control, refNode, error }) {
       }`}
     >
       <div className="sm:col-span-3 flex items-start pt-2">
-        <span className="text-[13px] font-semibold text-gray-700 leading-snug">
+        <span className="text-[13px] font-semibold text-gray-700 leading-snug inline-flex items-center gap-1.5 flex-wrap">
           {field.name}
           {field.required && <span className="inline-block w-1 h-1 rounded-full bg-blue-600 ml-1 align-middle" />}
+          {smart && <SmartBadge />}
         </span>
       </div>
       <div className="sm:col-span-5">{control}</div>
@@ -519,6 +541,7 @@ function NumberField({ field, value, onChange, error, patientAge, patientGender 
       field={field}
       error={error}
       control={control}
+      smart={isSmartField(field)}
       refNode={<RangeRefContent field={field} rangeInfo={rangeInfo} evaluated={evaluated} hasValue={hasValue} />}
     />
   );

@@ -269,12 +269,13 @@ function RefKeyValueBoxPDF({ groups }) {
 // matching this report's black-ink-on-white-paper theme — so it's
 // unambiguous which reference band this patient falls under, with every
 // other tier/group still shown for clinical context.
-function RefTierBoxPDF({ groups }) {
+function RefTierBoxPDF({ groups, smart = true }) {
   const lines = flattenTierGroups(groups);
   return (
     <View style={{ width: "100%" }}>
-      {lines.map((line, i) =>
-        line.type === "header" ? (
+      {lines.map((line, i) => {
+        const matched = smart && line.matched;
+        return line.type === "header" ? (
           <View
             key={i}
             style={{
@@ -301,7 +302,7 @@ function RefTierBoxPDF({ groups }) {
             key={i}
             style={{
               borderTop: i > 0 ? `1 solid ${LINE}` : undefined,
-              backgroundColor: line.matched ? ABNORMAL_BG : undefined,
+              backgroundColor: matched ? ABNORMAL_BG : undefined,
               flexDirection: "row",
             }}
           >
@@ -319,10 +320,10 @@ function RefTierBoxPDF({ groups }) {
                 gap: 4,
               }}
             >
-              <Text style={{ fontSize: 7, fontFamily: line.matched ? "Helvetica-Bold" : "Helvetica", color: BLACK }}>
+              <Text style={{ fontSize: 7, fontFamily: matched ? "Helvetica-Bold" : "Helvetica", color: BLACK }}>
                 {line.label}
               </Text>
-              {line.matched && <Text style={{ fontSize: 7, fontFamily: "Helvetica-Bold", color: BLACK }}>✓</Text>}
+              {matched && <Text style={{ fontSize: 7, fontFamily: "Helvetica-Bold", color: BLACK }}>✓</Text>}
             </View>
             <View
               style={{
@@ -333,23 +334,24 @@ function RefTierBoxPDF({ groups }) {
                 paddingHorizontal: 6,
               }}
             >
-              <Text style={{ fontSize: 7, fontFamily: line.matched ? "Helvetica-Bold" : "Helvetica", color: BLACK }}>
+              <Text style={{ fontSize: 7, fontFamily: matched ? "Helvetica-Bold" : "Helvetica", color: BLACK }}>
                 {line.range}
               </Text>
             </View>
           </View>
-        ),
-      )}
+        );
+      })}
     </View>
   );
 }
 
-function PDFSection({ sectionName, sectionData, index, showHeader }) {
+function PDFSection({ sectionName, sectionData, index, showHeader, smart = true }) {
   const entries = getSectionEntries(sectionData);
   const resultEntries = entries.filter(([, v]) => isResultField(v));
   const plainEntries = entries.filter(([, v]) => !isResultField(v));
   const hasUnits = resultEntries.some(([, v]) => Boolean(v.unit));
-  const hasStatus = resultEntries.some(([, v]) => hasEvaluableStatus(v));
+  // Classic mode hides the Status column entirely on the PDF.
+  const hasStatus = smart && resultEntries.some(([, v]) => hasEvaluableStatus(v));
 
   const W = hasUnits
     ? hasStatus
@@ -407,7 +409,7 @@ function PDFSection({ sectionName, sectionData, index, showHeader }) {
                 {hasUnits && <Text style={[s.td, s.tdMuted, colFlex(W.unit)]}>{unit || "—"}</Text>}
                 {tierGroups ? (
                   <View style={[hasStatus ? s.td : s.tdLast, colFlex(W.ref), { padding: 0 }]}>
-                    <RefTierBoxPDF groups={tierGroups} />
+                    <RefTierBoxPDF groups={tierGroups} smart={smart} />
                   </View>
                 ) : refIsKV ? (
                   <View style={[hasStatus ? s.td : s.tdLast, colFlex(W.ref), { padding: 0 }]}>
@@ -457,7 +459,7 @@ function PDFSection({ sectionName, sectionData, index, showHeader }) {
   );
 }
 
-export function ReportPDFDocument({ report, reportName, shortId, patient, labInfo }) {
+export function ReportPDFDocument({ report, reportName, shortId, patient, labInfo, smart = true }) {
   const sections = Object.entries(report).filter(
     ([key, val]) =>
       key !== "_id" && key !== "name" && val !== null && typeof val === "object" && !Array.isArray(val) && !val.$oid,
@@ -514,6 +516,7 @@ export function ReportPDFDocument({ report, reportName, shortId, patient, labInf
             sectionData={sectionData}
             index={i}
             showHeader={sectionData.__showTitle !== false}
+            smart={smart}
           />
         ))}
 

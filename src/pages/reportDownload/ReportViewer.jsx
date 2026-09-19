@@ -555,7 +555,7 @@ function buildPrintHTML({ reportName, shortId, patient, labInfo, sections, print
   /* The only two rules with no Tailwind/class-based equivalent: @page has
      no selector to attach a class to, and -webkit-print-color-adjust has
      no Tailwind utility. Everything else in this document is Tailwind. */
-  @page { size: A4; margin: 14mm; }
+  @page { size: A4; margin: 15mm; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 </style>
 </head>

@@ -9,7 +9,10 @@ const ALT_BG = "#f8f8f8";
 const ABNORMAL_BG = "#e6e6e6"; // used for the matched-tier row inside RefTierBoxPDF
 
 const s = StyleSheet.create({
-  page: { fontFamily: "Helvetica", fontSize: 9, color: BLACK, padding: 28, paddingBottom: 92 },
+  // 42pt ≈ 15mm on all sides, matching the print/HTML view's @page margin;
+  // paddingBottom keeps the same extra room reserved for the fixed footer
+  // (64pt) on top of that standard margin.
+  page: { fontFamily: "Helvetica", fontSize: 9, color: BLACK, padding: 42, paddingBottom: 106 },
 
   // Letterhead
   letterhead: {
@@ -134,9 +137,22 @@ const s = StyleSheet.create({
 function getStatus(field) {
   return field?.referenceTag || null;
 }
+// A field only routed to plainEntries (the narrow name+value layout) when
+// it has none of these — but a Key-Value Pair reference (referenceValue as
+// an array of groups) was missing from this check, so a field with no unit
+// and no numeric range — e.g. a text/textarea field carrying only a
+// grouped Key-Value reference — fell into plainEntries instead of the
+// properly width-balanced resultEntries table, and got squeezed into a
+// sliver of the row width. Any field carrying that grouped reference now
+// counts as a result field regardless of whether it also has a unit.
 function isResultField(field) {
   if (!field || typeof field !== "object") return false;
-  return Boolean(field.referenceRange) || Boolean(field.referenceTag) || Boolean(field.unit);
+  return (
+    Boolean(field.referenceRange) ||
+    Boolean(field.referenceTag) ||
+    Boolean(field.unit) ||
+    Array.isArray(field.referenceValue)
+  );
 }
 function hasEvaluableStatus(field) {
   return Boolean(field?.referenceTag);
@@ -381,7 +397,7 @@ function PDFSection({ sectionName, sectionData, index, showHeader, smart = true 
       : { param: 38, result: 22, ref: 40 };
 
   return (
-    <View style={s.sectionWrap} wrap={false}>
+    <View style={s.sectionWrap}>
       {showHeader && (
         <View style={s.sectionHead}>
           <View style={s.sectionBadge}>
@@ -422,7 +438,7 @@ function PDFSection({ sectionName, sectionData, index, showHeader, smart = true 
             const refIsKV = !tierGroups && Array.isArray(ref);
             const status = getStatus(field);
             return (
-              <View key={name} style={[s.tableRow, i % 2 === 1 && s.tableRowAlt]} wrap={false}>
+              <View key={name} style={[s.tableRow, i % 2 === 1 && s.tableRowAlt]} wrap={!(tierGroups || refIsKV)}>
                 <Text style={[s.td, colFlex(W.param)]}>{name}</Text>
                 <Text style={[s.td, s.tdBold, colFlex(W.result)]}>{value || "—"}</Text>
                 {hasUnits && <Text style={[s.td, s.tdMuted, colFlex(W.unit)]}>{unit || "—"}</Text>}
@@ -454,17 +470,17 @@ function PDFSection({ sectionName, sectionData, index, showHeader, smart = true 
             const val = Array.isArray(field.value) ? field.value.join(", ") : String(field.value ?? "—");
             const isKV = Array.isArray(field.referenceValue);
             return (
-              <View key={name} style={[s.tableRow, i % 2 === 1 && s.tableRowAlt]} wrap={false}>
+              <View key={name} style={[s.tableRow, i % 2 === 1 && s.tableRowAlt]} wrap={!isKV}>
                 <Text style={[s.td, colFlex(32)]}>{name}</Text>
                 {isKV ? (
-                  <View style={{ flex: 1, flexDirection: "row", alignItems: "center" }}>
+                  <View style={{ ...colFlex(68), flexDirection: "row", alignItems: "flex-start" }}>
                     <Text style={[s.tdBold, { fontSize: 9, color: BLACK, padding: "5 8" }]}>{val || "—"}</Text>
                     <View style={{ flex: 1 }}>
                       <RefKeyValueBoxPDF groups={field.referenceValue} />
                     </View>
                   </View>
                 ) : (
-                  <View style={{ flex: 1, flexDirection: "row", alignItems: "center", padding: "5 8", gap: 6 }}>
+                  <View style={{ ...colFlex(68), flexDirection: "row", alignItems: "center", padding: "5 8", gap: 6 }}>
                     <Text style={[s.tdBold, { fontSize: 9, color: BLACK }]}>{val || "—"}</Text>
                     {field.referenceValue ? <Text style={s.refNote}>(Ref: {field.referenceValue})</Text> : null}
                   </View>

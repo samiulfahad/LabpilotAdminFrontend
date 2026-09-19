@@ -113,13 +113,9 @@ function RefKeyValueBox({ groups }) {
             {line.label}
           </div>
         ) : (
-          <div
-            key={i}
-            className={`px-3 py-2 text-[11px] font-bold text-black text-center leading-snug ${
-              i > 0 ? "border-t border-black" : ""
-            }`}
-          >
-            {line.key} : {line.value}
+          <div key={i} className={`grid grid-cols-2 text-[11px] leading-snug ${i > 0 ? "border-t border-black" : ""}`}>
+            <span className="px-3 py-2 border-r border-black text-black break-words min-w-0">{line.key}</span>
+            <span className="px-3 py-2 text-black break-words min-w-0">{line.value}</span>
           </div>
         ),
       )}
@@ -174,14 +170,16 @@ function RefTierBox({ groups, smart = true }) {
             }`}
           >
             <span
-              className={`px-3 py-1 border-r border-black text-black flex items-center justify-between gap-1 ${
+              className={`px-3 py-1 border-r border-black text-black flex items-center justify-between gap-1 break-words min-w-0 ${
                 matched ? "font-bold" : ""
               }`}
             >
-              {line.label}
+              <span className="break-words">{line.label}</span>
               {matched && <Check className="w-3 h-3 flex-shrink-0" />}
             </span>
-            <span className={`px-3 py-1 text-black ${matched ? "font-bold" : ""}`}>{line.range}</span>
+            <span className={`px-3 py-1 text-black break-words min-w-0 ${matched ? "font-bold" : ""}`}>
+              {line.range}
+            </span>
           </div>
         );
       })}
@@ -203,7 +201,10 @@ function refKeyValueRowsHtml(groups) {
       if (line.type === "header") {
         return `<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#000;text-align:center;padding:4px 12px;background:#f3f4f6;${borderTop}">${line.label}</div>`;
       }
-      return `<div style="font-size:10px;font-weight:700;color:#000;text-align:center;padding:6px 12px;${borderTop}">${line.key} : ${line.value}</div>`;
+      return `<div style="display:grid;grid-template-columns:1fr 1fr;font-size:10px;color:#000;min-width:0;${borderTop}">
+        <div style="padding:6px 12px;border-right:1px solid #000;min-width:0;overflow-wrap:break-word;word-break:break-word;">${line.key}</div>
+        <div style="padding:6px 12px;min-width:0;overflow-wrap:break-word;word-break:break-word;">${line.value}</div>
+      </div>`;
     })
     .join("");
 }
@@ -225,14 +226,14 @@ function refTierRowsHtml(groups, smart = true) {
         return `<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#000;text-align:center;padding:4px 12px;background:#f3f4f6;${borderTop}">${line.label}</div>`;
       }
       const matched = smart && line.matched;
-      return `<div style="display:grid;grid-template-columns:1fr 1fr;font-size:10px;color:#000;${borderTop}${
+      return `<div style="display:grid;grid-template-columns:1fr 1fr;font-size:10px;color:#000;min-width:0;${borderTop}${
         matched ? "background:#e6e6e6;font-weight:700;" : ""
       }">
-        <div style="padding:4px 12px;border-right:1px solid #000;display:flex;align-items:center;justify-content:space-between;gap:6px;">
-          <span>${line.label}</span>
-          ${matched ? `<span style="font-size:10px;">✓</span>` : ""}
+        <div style="padding:4px 12px;border-right:1px solid #000;min-width:0;overflow-wrap:break-word;word-break:break-word;display:flex;align-items:center;justify-content:space-between;gap:6px;">
+          <span style="overflow-wrap:break-word;word-break:break-word;">${line.label}</span>
+          ${matched ? `<span style="font-size:10px;flex-shrink:0;">✓</span>` : ""}
         </div>
-        <div style="padding:4px 12px;">${line.range}</div>
+        <div style="padding:4px 12px;min-width:0;overflow-wrap:break-word;word-break:break-word;">${line.range}</div>
       </div>`;
     })
     .join("");

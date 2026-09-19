@@ -244,13 +244,32 @@ function RefKeyValueBoxPDF({ groups }) {
             key={i}
             style={{
               borderTop: i > 0 ? `1 solid ${LINE}` : undefined,
-              paddingVertical: 4,
-              paddingHorizontal: 6,
+              flexDirection: "row",
             }}
           >
-            <Text style={{ fontSize: 7, fontFamily: "Helvetica-Bold", color: BLACK, textAlign: "center" }}>
-              {line.key} : {line.value}
-            </Text>
+            <View
+              style={{
+                flexBasis: 0,
+                flexGrow: 1,
+                flexShrink: 1,
+                borderRight: `1 solid ${LINE}`,
+                paddingVertical: 4,
+                paddingHorizontal: 6,
+              }}
+            >
+              <Text style={{ fontSize: 7, fontFamily: "Helvetica", color: BLACK }}>{line.key}</Text>
+            </View>
+            <View
+              style={{
+                flexBasis: 0,
+                flexGrow: 1,
+                flexShrink: 1,
+                paddingVertical: 4,
+                paddingHorizontal: 6,
+              }}
+            >
+              <Text style={{ fontSize: 7, fontFamily: "Helvetica", color: BLACK }}>{line.value}</Text>
+            </View>
           </View>
         ),
       )}
